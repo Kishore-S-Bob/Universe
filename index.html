@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Solar System Explorer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div id="canvas-container"></div>
+    
+    <!-- Loading Screen -->
+    <div id="loading-screen">
+        <div class="loader">
+            <div class="sun-loader"></div>
+            <div class="loading-text">INITIALIZING UNIVERSE</div>
+            <div class="loading-bar">
+                <div class="loading-progress"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Info Panel -->
+    <div id="info-panel" class="glass-panel hidden">
+        <button class="close-btn" id="close-panel">&times;</button>
+        <div class="planet-icon" id="panel-icon"></div>
+        <h2 id="planet-name">Planet Name</h2>
+        <div class="planet-stats">
+            <div class="stat">
+                <span class="stat-label">Distance from Sun</span>
+                <span class="stat-value" id="planet-distance">0 km</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Orbital Period</span>
+                <span class="stat-value" id="planet-period">0 days</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Diameter</span>
+                <span class="stat-value" id="planet-diameter">0 km</span>
+            </div>
+        </div>
+        <p id="planet-description" class="planet-description"></p>
+    </div>
+
+    <!-- Controls Panel -->
+    <div id="controls-panel" class="glass-panel">
+        <h3>CONTROLS</h3>
+        <div class="control-group">
+            <label>Orbit Speed</label>
+            <input type="range" id="speed-slider" min="0" max="3" step="0.1" value="1">
+            <span id="speed-value">1x</span>
+        </div>
+        <div class="control-group">
+            <label>View Mode</label>
+            <div class="toggle-buttons">
+                <button class="toggle-btn active" data-mode="realistic">Realistic</button>
+                <button class="toggle-btn" data-mode="compact">Compact</button>
+            </div>
+        </div>
+        <div class="control-group">
+            <label>
+                <input type="checkbox" id="orbit-lines-toggle" checked>
+                Show Orbit Lines
+            </label>
+        </div>
+        <div class="control-group">
+            <label>
+                <input type="checkbox" id="ambient-music-toggle">
+                Ambient Music
+            </label>
+        </div>
+    </div>
+
+    <!-- Planet Labels -->
+    <div id="labels-container"></div>
+
+    <!-- Audio -->
+    <audio id="ambient-audio" loop>
+        <source src="https://assets.mixkit.co/music/preview/mixkit-space-ambience-124.wav" type="audio/wav">
+    </audio>
+
+    <!-- Three.js and Scripts - Load as global script first, then our module -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script type="module">
+        // Import OrbitControls from CDN as ES module
+        import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/controls/OrbitControls.js';
+        import { EffectComposer } from 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/postprocessing/UnrealBloomPass.js';
+        
+        // Make these available globally
+        window.THREE = THREE;
+        window.OrbitControls = OrbitControls;
+        window.EffectComposer = EffectComposer;
+        window.RenderPass = RenderPass;
+        window.UnrealBloomPass = UnrealBloomPass;
+        
+        // Now import and run main.js
+        import('./js/main.js');
+    </script>
+</body>
+</html>
