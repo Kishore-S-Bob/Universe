@@ -155,13 +155,66 @@ body {
     display: none;
 }
 
+/* Mode Selector */
+#mode-selector {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 100;
+    padding: 10px;
+}
+
+.mode-toggle {
+    display: flex;
+    gap: 4px;
+    background: rgba(0, 0, 0, 0.3);
+    padding: 4px;
+    border-radius: 12px;
+}
+
+.mode-btn {
+    padding: 10px 20px;
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    color: var(--text-secondary);
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    white-space: nowrap;
+}
+
+.mode-btn:hover {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.mode-btn.active {
+    background: linear-gradient(135deg, var(--primary-color), var(--accent-color));
+    color: white;
+    box-shadow: var(--glow-primary);
+}
+
 /* Control Panel */
 #control-panel {
     position: fixed;
-    top: 20px;
+    top: 90px;
     left: 20px;
     width: 280px;
-    max-height: calc(100vh - 40px);
+    max-height: calc(100vh - 120px);
+    overflow-y: auto;
+    z-index: 100;
+}
+
+#solar-panel {
+    position: fixed;
+    top: 90px;
+    left: 20px;
+    width: 280px;
+    max-height: calc(100vh - 120px);
     overflow-y: auto;
     z-index: 100;
 }
@@ -452,6 +505,20 @@ body {
     letter-spacing: 1px;
 }
 
+.property-group .info-value {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.95rem;
+    color: var(--primary-color);
+    padding: 8px 0;
+}
+
+.property-group .info-value.description {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+
 .property-group span {
     font-family: 'Orbitron', sans-serif;
     color: var(--primary-color);
@@ -604,7 +671,23 @@ body {
 
 /* Responsive Design */
 @media (max-width: 768px) {
-    #control-panel {
+    #mode-selector {
+        top: 10px;
+        left: 10px;
+        right: 10px;
+        transform: none;
+    }
+
+    .mode-toggle {
+        justify-content: center;
+    }
+
+    .mode-btn {
+        padding: 8px 12px;
+        font-size: 0.8rem;
+    }
+
+    #control-panel, #solar-panel {
         top: auto;
         bottom: 10px;
         left: 10px;
@@ -614,7 +697,7 @@ body {
     }
 
     #inspector-panel {
-        top: 10px;
+        top: 70px;
         right: 10px;
         left: 10px;
         width: auto;
@@ -625,7 +708,7 @@ body {
         font-size: 0.8rem;
     }
 
-    #control-panel h3 {
+    #control-panel h3, #solar-panel h3 {
         font-size: 0.85rem;
     }
 

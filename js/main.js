@@ -3,6 +3,9 @@
     let scene, camera, renderer, controls;
     let raycaster, mouse;
     
+    // Mode management
+    let currentMode = 'universe'; // 'universe' or 'solar'
+    
     // State
     let isPaused = false;
     let isReversed = false;
@@ -12,7 +15,7 @@
     let autoRotate = false;
     let hoveredObject = null;
     let focusMode = false;
-    let originalCameraPosition = new THREE.Vector3(0, 100, 150);
+    let originalCameraPosition = new THREE.Vector3(0, 100, 200);
     let originalTarget = new THREE.Vector3(0, 0, 0);
     let targetCameraPosition = null;
     let targetLookAt = null;
@@ -25,6 +28,108 @@
     const orbitLines = [];
     let starfield = null;
     
+    // Solar System objects
+    const solarSystemObjects = [];
+    let solarOrbitLines = [];
+    let sunData = null;
+    
+    // Solar System data - realistic proportions (scaled)
+    const SOLAR_SYSTEM_DATA = {
+        sun: {
+            name: 'Sun',
+            size: 15,
+            color: 0xffdd00,
+            distance: 0,
+            orbitalPeriod: 0,
+            rotationPeriod: 25,
+            description: 'The Sun is the star at the center of our Solar System.'
+        },
+        planets: [
+            {
+                name: 'Mercury',
+                size: 0.8,
+                color: 0xb5b5b5,
+                distance: 25,
+                orbitalPeriod: 88, // Earth days
+                rotationPeriod: 58.6,
+                description: 'Mercury is the smallest planet in our Solar System.'
+            },
+            {
+                name: 'Venus',
+                size: 1.5,
+                color: 0xe6c87a,
+                distance: 35,
+                orbitalPeriod: 225,
+                rotationPeriod: -243,
+                description: 'Venus is the hottest planet in our Solar System.'
+            },
+            {
+                name: 'Earth',
+                size: 1.6,
+                color: 0x4a90d9,
+                distance: 48,
+                orbitalPeriod: 365,
+                rotationPeriod: 1,
+                hasMoon: true,
+                description: 'Earth is the third planet from the Sun and our home.'
+            },
+            {
+                name: 'Mars',
+                size: 1.0,
+                color: 0xc1440e,
+                distance: 62,
+                orbitalPeriod: 687,
+                rotationPeriod: 1.03,
+                description: 'Mars is the fourth planet, known as the Red Planet.'
+            },
+            {
+                name: 'Jupiter',
+                size: 5,
+                color: 0xd4a574,
+                distance: 90,
+                orbitalPeriod: 4333,
+                rotationPeriod: 0.41,
+                description: 'Jupiter is the largest planet in our Solar System.'
+            },
+            {
+                name: 'Saturn',
+                size: 4.2,
+                color: 0xe6d4a8,
+                distance: 120,
+                orbitalPeriod: 10759,
+                rotationPeriod: 0.45,
+                hasRings: true,
+                description: 'Saturn is known for its beautiful ring system.'
+            },
+            {
+                name: 'Uranus',
+                size: 2.5,
+                color: 0x7de3f4,
+                distance: 150,
+                orbitalPeriod: 30687,
+                rotationPeriod: -0.72,
+                description: 'Uranus is an ice giant with a tilted rotation.'
+            },
+            {
+                name: 'Neptune',
+                size: 2.4,
+                color: 0x3d5ef7,
+                distance: 180,
+                orbitalPeriod: 60190,
+                rotationPeriod: 0.67,
+                description: 'Neptune is the farthest planet from the Sun.'
+            }
+        ],
+        moon: {
+            name: 'Moon',
+            size: 0.4,
+            color: 0xcccccc,
+            distance: 4,
+            orbitalPeriod: 27.3,
+            parent: 'Earth'
+        }
+    };
+
     // Constants
     const BASE_SPEED = 0.005;
     let nextId = 1;
@@ -41,7 +146,7 @@
 
         // Camera setup
         camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 5000);
-        camera.position.set(0, 100, 150);
+        camera.position.set(0, 100, 200);
 
         // Renderer setup
         renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -76,6 +181,7 @@
 
         // Setup event listeners
         setupEventListeners();
+        setupModeEventListeners();
 
         // Hide loading screen
         setTimeout(() => {
@@ -110,17 +216,14 @@
             // Vary star colors
             const colorType = Math.random();
             if (colorType < 0.6) {
-                // White/yellow stars
                 colors[i * 3] = 0.9 + Math.random() * 0.1;
                 colors[i * 3 + 1] = 0.9 + Math.random() * 0.1;
                 colors[i * 3 + 2] = 0.8 + Math.random() * 0.2;
             } else if (colorType < 0.8) {
-                // Blue stars
                 colors[i * 3] = 0.7 + Math.random() * 0.3;
                 colors[i * 3 + 1] = 0.8 + Math.random() * 0.2;
                 colors[i * 3 + 2] = 1.0;
             } else {
-                // Red/orange stars
                 colors[i * 3] = 1.0;
                 colors[i * 3 + 1] = 0.6 + Math.random() * 0.4;
                 colors[i * 3 + 2] = 0.4 + Math.random() * 0.2;
@@ -393,6 +496,364 @@
         return new THREE.Line(geometry, material);
     }
 
+    // Create Saturn's rings
+    function createSaturnRings(planetMesh, size) {
+        const ringGeometry = new THREE.RingGeometry(size * 1.3, size * 2.2, 64);
+        const ringMaterial = new THREE.MeshBasicMaterial({
+            color: 0xc9b896,
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.7
+        });
+        const rings = new THREE.Mesh(ringGeometry, ringMaterial);
+        rings.rotation.x = Math.PI / 2.2;
+        planetMesh.add(rings);
+        return rings;
+    }
+
+    // ==========================================
+    // SOLAR SYSTEM MODE FUNCTIONS
+    // ==========================================
+
+    // Load the Solar System
+    function loadSolarSystem() {
+        clearSolarSystem();
+        
+        const solarData = SOLAR_SYSTEM_DATA;
+        
+        // Create Sun
+        sunData = createSolarSun(solarData.sun);
+        
+        // Create planets
+        const earthData = solarData.planets.find(p => p.name === 'Earth');
+        
+        solarData.planets.forEach(planetInfo => {
+            const planet = createSolarPlanet(planetInfo);
+            
+            // Create Moon for Earth
+            if (planetInfo.hasMoon && planet) {
+                createSolarMoon(solarData.moon, planet);
+            }
+        });
+
+        // Adjust camera for Solar System
+        camera.position.set(0, 80, 250);
+        controls.target.set(0, 0, 0);
+        controls.update();
+    }
+
+    // Create Sun for Solar System mode
+    function createSolarSun(sunInfo) {
+        const size = sunInfo.size;
+        
+        // Sun group
+        const sunGroup = new THREE.Group();
+        sunGroup.position.set(0, 0, 0);
+        
+        // Sun mesh
+        const sunGeometry = new THREE.SphereGeometry(size, 64, 64);
+        const sunMaterial = new THREE.MeshBasicMaterial({
+            color: sunInfo.color,
+            emissive: sunInfo.color
+        });
+        const sun = new THREE.Mesh(sunGeometry, sunMaterial);
+        sunGroup.add(sun);
+
+        // Sun glow layers
+        const glowColors = [0.3, 0.2, 0.1, 0.05];
+        const glowSizes = [1.2, 1.5, 1.8, 2.2];
+        
+        glowSizes.forEach((s, i) => {
+            const glowGeometry = new THREE.SphereGeometry(size * s, 64, 64);
+            const glowMaterial = new THREE.MeshBasicMaterial({
+                color: sunInfo.color,
+                transparent: true,
+                opacity: glowColors[i]
+            });
+            const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+            sunGroup.add(glow);
+        });
+
+        // Point light from Sun
+        const sunLight = new THREE.PointLight(0xffffff, 2, 800, 1);
+        sunGroup.add(sunLight);
+        
+        // Ambient light for the whole scene
+        const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
+        scene.add(ambientLight);
+
+        scene.add(sunGroup);
+
+        // Store sun data
+        const sunDataObj = {
+            id: Date.now(),
+            type: 'sun',
+            name: sunInfo.name,
+            mesh: sun,
+            group: sunGroup,
+            size: size,
+            color: new THREE.Color(sunInfo.color),
+            rotationSpeed: 0.001 * sunInfo.rotationPeriod,
+            description: sunInfo.description,
+            angle: 0
+        };
+        sun.userData = sunDataObj;
+        solarSystemObjects.push(sunDataObj);
+
+        return sunDataObj;
+    }
+
+    // Create planet for Solar System mode
+    function createSolarPlanet(planetInfo) {
+        const size = planetInfo.size;
+        const distance = planetInfo.distance;
+        
+        // Orbit group
+        const orbitGroup = new THREE.Group();
+        orbitGroup.position.set(0, 0, 0);
+        scene.add(orbitGroup);
+
+        // Planet mesh
+        const planetGeometry = new THREE.SphereGeometry(size, 32, 32);
+        const planetMaterial = new THREE.MeshStandardMaterial({
+            color: planetInfo.color,
+            roughness: 0.8,
+            metalness: 0.1,
+            emissive: planetInfo.color,
+            emissiveIntensity: 0.1
+        });
+        const planet = new THREE.Mesh(planetGeometry, planetMaterial);
+        planet.position.x = distance;
+        planet.castShadow = true;
+        planet.receiveShadow = true;
+        orbitGroup.add(planet);
+
+        // Add Saturn's rings
+        if (planetInfo.hasRings) {
+            const rings = createSaturnRings(planet, size);
+            planet.userData.rings = rings;
+        }
+
+        // Create orbit line
+        const orbitLine = createOrbitLine(distance);
+        orbitLine.position.set(0, 0, 0);
+        orbitLine.visible = showOrbits;
+        scene.add(orbitLine);
+        solarOrbitLines.push(orbitLine);
+
+        // Calculate orbital speed (scaled relative to Earth's orbital period)
+        // Earth = 1, Mercury = 4.14 (365/88), Neptune = 0.006 (365/60190)
+        const baseOrbitalSpeed = 0.01;
+        const orbitalSpeed = baseOrbitalSpeed * (365 / planetInfo.orbitalPeriod);
+        
+        // Rotation speed (scaled)
+        const rotationSpeed = 0.02 * (1 / Math.abs(planetInfo.rotationPeriod));
+
+        // Store planet data
+        const planetData = {
+            id: Date.now(),
+            type: 'solarPlanet',
+            name: planetInfo.name,
+            mesh: planet,
+            group: orbitGroup,
+            orbitLine: orbitLine,
+            size: size,
+            color: new THREE.Color(planetInfo.color),
+            distance: distance,
+            orbitalPeriod: planetInfo.orbitalPeriod,
+            orbitalSpeed: orbitalSpeed,
+            rotationSpeed: rotationSpeed,
+            rotationPeriod: planetInfo.rotationPeriod,
+            description: planetInfo.description,
+            angle: Math.random() * Math.PI * 2
+        };
+        planet.userData = planetData;
+        solarSystemObjects.push(planetData);
+
+        return planetData;
+    }
+
+    // Create Moon for Solar System mode
+    function createSolarMoon(moonInfo, earthPlanet) {
+        const size = moonInfo.size;
+        const distance = moonInfo.distance;
+        
+        // Moon orbit group (attached to Earth)
+        const moonOrbitGroup = new THREE.Group();
+        earthPlanet.mesh.add(moonOrbitGroup);
+
+        // Moon mesh
+        const moonGeometry = new THREE.SphereGeometry(size, 16, 16);
+        const moonMaterial = new THREE.MeshStandardMaterial({
+            color: moonInfo.color,
+            roughness: 1,
+            metalness: 0,
+            emissive: moonInfo.color,
+            emissiveIntensity: 0.05
+        });
+        const moon = new THREE.Mesh(moonGeometry, moonMaterial);
+        moon.position.x = distance;
+        moon.castShadow = true;
+        moon.receiveShadow = true;
+        moonOrbitGroup.add(moon);
+
+        // Create moon orbit line
+        const moonOrbitLine = createOrbitLine(distance);
+        moonOrbitLine.rotation.x = Math.PI / 2;
+        moonOrbitLine.visible = showOrbits;
+        earthPlanet.mesh.add(moonOrbitLine);
+
+        // Calculate orbital speed (faster than planets)
+        const orbitalSpeed = BASE_SPEED * 2 * (27.3 / moonInfo.orbitalPeriod);
+
+        // Store moon data
+        const moonData = {
+            id: Date.now(),
+            type: 'solarMoon',
+            name: moonInfo.name,
+            mesh: moon,
+            group: moonOrbitGroup,
+            parent: earthPlanet,
+            orbitLine: moonOrbitLine,
+            size: size,
+            color: new THREE.Color(moonInfo.color),
+            distance: distance,
+            orbitalPeriod: moonInfo.orbitalPeriod,
+            orbitalSpeed: orbitalSpeed,
+            rotationSpeed: 0.02,
+            description: 'Earth\'s natural satellite',
+            angle: 0
+        };
+        moon.userData = moonData;
+        solarSystemObjects.push(moonData);
+
+        return moonData;
+    }
+
+    // Clear Solar System
+    function clearSolarSystem() {
+        // Remove all solar system objects
+        solarSystemObjects.forEach(obj => {
+            if (obj.group && obj.group.parent) {
+                scene.remove(obj.group);
+            } else if (obj.mesh && obj.mesh.parent) {
+                // For moons attached to planets
+                obj.mesh.parent.remove(obj.mesh);
+            }
+        });
+        
+        // Remove orbit lines
+        solarOrbitLines.forEach(line => {
+            scene.remove(line);
+        });
+        
+        solarSystemObjects.length = 0;
+        solarOrbitLines.length = 0;
+        sunData = null;
+        
+        deselectObject();
+    }
+
+    // Load Solar System to Universe Builder
+    function loadSolarSystemToUniverse() {
+        // Clear current universe
+        clearUniverse();
+        
+        // Create a star at center to represent Sun
+        const star = createStar({
+            name: 'Sun',
+            size: 15,
+            color: 0xffdd00,
+            position: new THREE.Vector3(0, 0, 0),
+            glowIntensity: 2
+        });
+
+        // Add planets from solar system
+        SOLAR_SYSTEM_DATA.planets.forEach(planetInfo => {
+            const planet = createPlanet({
+                parent: star.mesh,
+                name: planetInfo.name,
+                size: planetInfo.size,
+                color: planetInfo.color,
+                distance: planetInfo.distance,
+                orbitSpeed: 365 / planetInfo.orbitalPeriod,
+                rotationSpeed: 1 / Math.abs(planetInfo.rotationPeriod)
+            });
+            
+            // Add Moon for Earth
+            if (planetInfo.hasMoon) {
+                createMoon({
+                    parent: planet.mesh,
+                    name: 'Moon',
+                    size: 0.4,
+                    color: 0xcccccc,
+                    distance: 4,
+                    orbitSpeed: 27.3 / 27.3
+                });
+            }
+        });
+
+        // Switch to Universe mode
+        switchMode('universe');
+        
+        alert('Solar System loaded into Universe Builder! You can now edit it.');
+    }
+
+    // ==========================================
+    // MODE SWITCHING
+    // ==========================================
+
+    // Switch between modes
+    function switchMode(mode) {
+        if (mode === currentMode) return;
+        
+        // Clear current scene objects safely
+        if (currentMode === 'universe') {
+            clearUniverse();
+        } else if (currentMode === 'solar') {
+            clearSolarSystem();
+        }
+        
+        currentMode = mode;
+        
+        // Update UI
+        updateModeUI();
+        
+        // Load new mode
+        if (mode === 'solar') {
+            loadSolarSystem();
+        } else {
+            // Reset camera for universe mode
+            camera.position.set(0, 100, 200);
+            controls.target.set(0, 0, 0);
+            controls.update();
+        }
+    }
+
+    // Update mode UI
+    function updateModeUI() {
+        const universeBtn = document.getElementById('universe-mode-btn');
+        const solarBtn = document.getElementById('solar-mode-btn');
+        const controlPanel = document.getElementById('control-panel');
+        const solarPanel = document.getElementById('solar-panel');
+        
+        if (currentMode === 'universe') {
+            universeBtn.classList.add('active');
+            solarBtn.classList.remove('active');
+            controlPanel.classList.remove('hidden');
+            solarPanel.classList.add('hidden');
+        } else {
+            universeBtn.classList.remove('active');
+            solarBtn.classList.add('active');
+            controlPanel.classList.add('hidden');
+            solarPanel.classList.remove('hidden');
+        }
+    }
+
+    // ==========================================
+    // EXISTING UNIVERSE BUILDER FUNCTIONS
+    // ==========================================
+
     // Delete object
     function deleteObject(objData) {
         if (!objData) return;
@@ -446,7 +907,7 @@
         selectedObject = objData;
 
         // Highlight effect
-        if (objData.type === 'star') {
+        if (objData.type === 'star' || objData.type === 'sun') {
             objData.mesh.scale.set(1.1, 1.1, 1.1);
         } else {
             objData.mesh.scale.set(1.2, 1.2, 1.2);
@@ -463,7 +924,7 @@
 
         // Reset scale and emissive
         selectedObject.mesh.scale.set(1, 1, 1);
-        if (selectedObject.type !== 'star') {
+        if (selectedObject.type !== 'star' && selectedObject.type !== 'sun') {
             selectedObject.mesh.material.emissiveIntensity = 0.1;
         }
 
@@ -474,40 +935,265 @@
     // Show inspector panel
     function showInspector(objData) {
         const inspector = document.getElementById('inspector-panel');
-        const title = document.getElementById('inspector-title');
+        const inspectorContent = document.getElementById('inspector-content');
         
-        title.textContent = `${objData.type.charAt(0).toUpperCase() + objData.type.slice(1)} Properties`;
+        let content = '';
         
-        // Update form values
-        document.getElementById('obj-name').value = objData.name;
-        document.getElementById('obj-size').value = objData.size;
-        document.getElementById('size-value').textContent = objData.size.toFixed(1);
-        
-        if (objData.type === 'star') {
-            document.getElementById('obj-speed').parentElement.style.display = 'none';
-            document.getElementById('obj-distance').parentElement.style.display = 'none';
+        if (currentMode === 'solar' && (objData.type === 'solarPlanet' || objData.type === 'sun' || objData.type === 'solarMoon')) {
+            // Solar System mode info panel
+            document.getElementById('inspector-title').textContent = objData.name;
+            
+            content = `
+                <div class="property-group">
+                    <label>Name</label>
+                    <div class="info-value">${objData.name}</div>
+                </div>
+            `;
+            
+            if (objData.type === 'sun') {
+                content += `
+                    <div class="property-group">
+                        <label>Type</label>
+                        <div class="info-value">Star</div>
+                    </div>
+                    <div class="property-group">
+                        <label>Description</label>
+                        <div class="info-value description">${objData.description}</div>
+                    </div>
+                `;
+            } else if (objData.type === 'solarPlanet') {
+                content += `
+                    <div class="property-group">
+                        <label>Distance from Sun</label>
+                        <div class="info-value">${objData.distance} AU (scaled)</div>
+                    </div>
+                    <div class="property-group">
+                        <label>Orbital Period</label>
+                        <div class="info-value">${objData.orbitalPeriod} Earth days</div>
+                    </div>
+                    <div class="property-group">
+                        <label>Rotation Period</label>
+                        <div class="info-value">${Math.abs(objData.rotationPeriod)} Earth days</div>
+                    </div>
+                    <div class="property-group">
+                        <label>Description</label>
+                        <div class="info-value description">${objData.description}</div>
+                    </div>
+                `;
+            } else if (objData.type === 'solarMoon') {
+                content += `
+                    <div class="property-group">
+                        <label>Parent</label>
+                        <div class="info-value">${objData.parent.name}</div>
+                    </div>
+                    <div class="property-group">
+                        <label>Orbital Period</label>
+                        <div class="info-value">${objData.orbitalPeriod} Earth days</div>
+                    </div>
+                    <div class="property-group">
+                        <label>Description</label>
+                        <div class="info-value description">${objData.description}</div>
+                    </div>
+                `;
+            }
+            
+            content += `
+                <button id="focus-btn" class="action-btn">🎥 Focus</button>
+            `;
         } else {
-            document.getElementById('obj-speed').parentElement.style.display = 'block';
-            document.getElementById('obj-distance').parentElement.style.display = 'block';
-            document.getElementById('obj-speed').value = (objData.orbitalSpeed / BASE_SPEED) * Math.sqrt(objData.distance);
-            document.getElementById('speed-value-prop').textContent = ((objData.orbitalSpeed / BASE_SPEED) * Math.sqrt(objData.distance)).toFixed(1);
-            document.getElementById('obj-distance').value = objData.distance;
-            document.getElementById('distance-value').textContent = objData.distance.toFixed(0);
+            // Universe Builder mode
+            document.getElementById('inspector-title').textContent = `${objData.type.charAt(0).toUpperCase() + objData.type.slice(1)} Properties`;
+            
+            content = `
+                <div class="property-group">
+                    <label for="obj-name">Name</label>
+                    <input type="text" id="obj-name" class="text-input" value="${objData.name}">
+                </div>
+
+                <div class="property-group">
+                    <label for="obj-size">Size: <span id="size-value">${objData.size.toFixed(1)}</span></label>
+                    <input type="range" id="obj-size" min="0.1" max="10" step="0.1" value="${objData.size}">
+                </div>
+            `;
+
+            if (objData.type !== 'star') {
+                content += `
+                    <div class="property-group">
+                        <label for="obj-speed">Orbit Speed: <span id="speed-value-prop">${((objData.orbitalSpeed / BASE_SPEED) * Math.sqrt(objData.distance)).toFixed(1)}</span></label>
+                        <input type="range" id="obj-speed" min="0" max="10" step="0.1" value="${(objData.orbitalSpeed / BASE_SPEED) * Math.sqrt(objData.distance)}">
+                    </div>
+
+                    <div class="property-group">
+                        <label for="obj-distance">Distance from Parent: <span id="distance-value">${objData.distance.toFixed(0)}</span></label>
+                        <input type="range" id="obj-distance" min="5" max="200" step="1" value="${objData.distance}">
+                    </div>
+                `;
+            }
+
+            content += `
+                <div class="property-group">
+                    <label for="obj-color">Color</label>
+                    <input type="color" id="obj-color" value="#${objData.color.getHexString()}">
+                </div>
+            `;
+
+            if (objData.type === 'star') {
+                content += `
+                    <div class="property-group">
+                        <label for="obj-glow">Glow Intensity: <span id="glow-value">${objData.glowIntensity.toFixed(1)}</span></label>
+                        <input type="range" id="obj-glow" min="0" max="3" step="0.1" value="${objData.glowIntensity}">
+                    </div>
+                `;
+            }
+
+            content += `
+                <div class="property-group">
+                    <label for="obj-rotation">Rotation Speed: <span id="rotation-value">${(objData.rotationSpeed / 0.02).toFixed(1)}</span></label>
+                    <input type="range" id="obj-rotation" min="0" max="5" step="0.1" value="${objData.rotationSpeed / 0.02}">
+                </div>
+
+                <div class="button-group">
+                    <button id="focus-btn" class="action-btn">🎥 Focus</button>
+                    <button id="delete-btn" class="danger-btn">🗑️ Delete</button>
+                </div>
+            `;
         }
         
-        document.getElementById('obj-color').value = '#' + objData.color.getHexString();
-        document.getElementById('obj-rotation').value = objData.rotationSpeed / 0.02;
-        document.getElementById('rotation-value').textContent = (objData.rotationSpeed / 0.02).toFixed(1);
+        inspectorContent.innerHTML = content;
         
-        if (objData.type === 'star') {
-            document.getElementById('obj-glow').parentElement.style.display = 'block';
-            document.getElementById('obj-glow').value = objData.glowIntensity;
-            document.getElementById('glow-value').textContent = objData.glowIntensity.toFixed(1);
-        } else {
-            document.getElementById('obj-glow').parentElement.style.display = 'none';
-        }
+        // Re-attach event listeners for dynamic content
+        attachInspectorListeners();
         
         inspector.classList.remove('hidden');
+    }
+
+    // Attach inspector event listeners
+    function attachInspectorListeners() {
+        const focusBtn = document.getElementById('focus-btn');
+        if (focusBtn) {
+            focusBtn.addEventListener('click', () => {
+                if (selectedObject) focusOnObject(selectedObject);
+            });
+        }
+        
+        const deleteBtn = document.getElementById('delete-btn');
+        if (deleteBtn) {
+            deleteBtn.addEventListener('click', () => {
+                if (selectedObject && confirm(`Delete ${selectedObject.name}?`)) {
+                    if (currentMode === 'solar') {
+                        // For solar system, just deselect
+                        deselectObject();
+                    } else {
+                        deleteObject(selectedObject);
+                    }
+                }
+            });
+        }
+        
+        // Universe Builder listeners
+        const nameInput = document.getElementById('obj-name');
+        if (nameInput) {
+            nameInput.addEventListener('input', (e) => {
+                if (selectedObject) selectedObject.name = e.target.value;
+            });
+        }
+        
+        const sizeInput = document.getElementById('obj-size');
+        if (sizeInput) {
+            sizeInput.addEventListener('input', (e) => {
+                if (selectedObject) {
+                    const size = parseFloat(e.target.value);
+                    selectedObject.size = size;
+                    const mesh = selectedObject.mesh;
+                    mesh.geometry.dispose();
+                    mesh.geometry = new THREE.SphereGeometry(size, 32, 32);
+                    document.getElementById('size-value').textContent = size.toFixed(1);
+                }
+            });
+        }
+        
+        const speedInput = document.getElementById('obj-speed');
+        if (speedInput) {
+            speedInput.addEventListener('input', (e) => {
+                if (selectedObject && selectedObject.type !== 'star') {
+                    const speed = parseFloat(e.target.value);
+                    selectedObject.orbitalSpeed = (BASE_SPEED * speed) / Math.sqrt(selectedObject.distance);
+                    document.getElementById('speed-value-prop').textContent = speed.toFixed(1);
+                }
+            });
+        }
+        
+        const distInput = document.getElementById('obj-distance');
+        if (distInput) {
+            distInput.addEventListener('input', (e) => {
+                if (selectedObject && selectedObject.type !== 'star') {
+                    const distance = parseFloat(e.target.value);
+                    selectedObject.distance = distance;
+                    selectedObject.mesh.position.x = distance;
+                    
+                    if (selectedObject.orbitLine) {
+                        scene.remove(selectedObject.orbitLine);
+                        const newOrbitLine = createOrbitLine(distance);
+                        if (selectedObject.parent) {
+                            const parentGroup = selectedObject.parent.parent || selectedObject.parent;
+                            newOrbitLine.position.copy(parentGroup.position);
+                        }
+                        newOrbitLine.visible = showOrbits;
+                        scene.add(newOrbitLine);
+                        const index = orbitLines.indexOf(selectedObject.orbitLine);
+                        if (index > -1) orbitLines[index] = newOrbitLine;
+                        selectedObject.orbitLine = newOrbitLine;
+                    }
+                    
+                    document.getElementById('distance-value').textContent = distance.toFixed(0);
+                }
+            });
+        }
+        
+        const colorInput = document.getElementById('obj-color');
+        if (colorInput) {
+            colorInput.addEventListener('input', (e) => {
+                if (selectedObject) {
+                    const color = new THREE.Color(e.target.value);
+                    selectedObject.color = color;
+                    selectedObject.mesh.material.color = color;
+                    selectedObject.mesh.material.emissive = color;
+                    
+                    if (selectedObject.type === 'star') {
+                        selectedObject.glow.material.color = color;
+                        selectedObject.outerGlow.material.color = color;
+                        selectedObject.corona.material.color = color;
+                        selectedObject.light.color = color;
+                    }
+                }
+            });
+        }
+        
+        const glowInput = document.getElementById('obj-glow');
+        if (glowInput) {
+            glowInput.addEventListener('input', (e) => {
+                if (selectedObject && selectedObject.type === 'star') {
+                    const intensity = parseFloat(e.target.value);
+                    selectedObject.glowIntensity = intensity;
+                    selectedObject.glow.material.opacity = 0.3 * intensity;
+                    selectedObject.outerGlow.material.opacity = 0.15 * intensity;
+                    selectedObject.corona.material.opacity = 0.08 * intensity;
+                    selectedObject.light.intensity = 2 * intensity;
+                    document.getElementById('glow-value').textContent = intensity.toFixed(1);
+                }
+            });
+        }
+        
+        const rotInput = document.getElementById('obj-rotation');
+        if (rotInput) {
+            rotInput.addEventListener('input', (e) => {
+                if (selectedObject) {
+                    const speed = parseFloat(e.target.value);
+                    selectedObject.rotationSpeed = 0.02 * speed;
+                    document.getElementById('rotation-value').textContent = speed.toFixed(1);
+                }
+            });
+        }
     }
 
     // Hide inspector panel
@@ -530,7 +1216,7 @@
         const worldPos = new THREE.Vector3();
         if (objData.group) {
             objData.group.getWorldPosition(worldPos);
-        } else {
+        } else if (objData.mesh) {
             objData.mesh.getWorldPosition(worldPos);
         }
 
@@ -561,10 +1247,8 @@
 
     // Generate random universe
     function generateRandomUniverse() {
-        // Clear existing
         clearUniverse();
 
-        // Generate random stars (1-3)
         const numStars = 1 + Math.floor(Math.random() * 3);
         for (let i = 0; i < numStars; i++) {
             const star = createStar({
@@ -578,7 +1262,6 @@
                 glowIntensity: 0.5 + Math.random() * 1
             });
 
-            // Generate planets for each star
             const numPlanets = 2 + Math.floor(Math.random() * 5);
             for (let j = 0; j < numPlanets; j++) {
                 const distance = 15 + j * 10 + Math.random() * 8;
@@ -591,7 +1274,6 @@
                     rotationSpeed: 0.5 + Math.random() * 2
                 });
 
-                // Generate moons for some planets
                 if (Math.random() > 0.5) {
                     const numMoons = 1 + Math.floor(Math.random() * 3);
                     for (let k = 0; k < numMoons; k++) {
@@ -610,7 +1292,6 @@
 
     // Clear universe
     function clearUniverse() {
-        // Delete all objects in reverse order
         [...moons].forEach(m => deleteObject(m));
         [...planets].forEach(p => deleteObject(p));
         [...stars].forEach(s => deleteObject(s));
@@ -680,14 +1361,12 @@
                 const data = JSON.parse(e.target.result);
                 clearUniverse();
 
-                // Create stars
                 const starMap = new Map();
                 data.stars.forEach(starData => {
                     const star = createStar(starData);
                     starMap.set(star.name, star);
                 });
 
-                // Create planets
                 const planetMap = new Map();
                 data.planets.forEach(planetData => {
                     const parent = starMap.get(planetData.parentName);
@@ -701,7 +1380,6 @@
                     }
                 });
 
-                // Create moons
                 data.moons.forEach(moonData => {
                     const parent = planetMap.get(moonData.parentName);
                     if (parent) {
@@ -733,7 +1411,10 @@
         btn.disabled = planets.length === 0;
     }
 
-    // Setup event listeners
+    // ==========================================
+    // EVENT LISTENERS
+    // ==========================================
+
     function setupEventListeners() {
         // Window resize
         window.addEventListener('resize', onWindowResize);
@@ -743,12 +1424,12 @@
         renderer.domElement.addEventListener('mousemove', onMouseMove);
         renderer.domElement.addEventListener('contextmenu', onContextMenu);
 
-        // Creation buttons
+        // Creation buttons (Universe mode)
         document.getElementById('add-star-btn').addEventListener('click', () => showCreationModal('star'));
         document.getElementById('add-planet-btn').addEventListener('click', () => showCreationModal('planet'));
         document.getElementById('add-moon-btn').addEventListener('click', () => showCreationModal('moon'));
 
-        // Time controls
+        // Universe time controls
         document.getElementById('play-pause-btn').addEventListener('click', togglePlayPause);
         document.getElementById('reverse-btn').addEventListener('click', toggleReverse);
         document.getElementById('speed-slider').addEventListener('input', (e) => {
@@ -756,7 +1437,7 @@
             document.getElementById('speed-value').textContent = timeScale.toFixed(1) + 'x';
         });
 
-        // View options
+        // Universe view options
         document.getElementById('show-orbits').addEventListener('change', (e) => {
             showOrbits = e.target.checked;
             orbitLines.forEach(line => line.visible = showOrbits);
@@ -783,108 +1464,25 @@
             }
         });
 
-        // Navigation
+        // Navigation - Universe mode
         document.getElementById('reset-view-btn').addEventListener('click', () => {
             exitFocusMode();
-            camera.position.set(0, 100, 150);
+            camera.position.set(0, 100, 200);
             controls.target.set(0, 0, 0);
             controls.update();
         });
-        document.getElementById('back-to-universe-btn').addEventListener('click', exitFocusMode);
 
-        // Inspector controls
+        // Inspector close
         document.getElementById('close-inspector').addEventListener('click', deselectObject);
-        document.getElementById('obj-name').addEventListener('input', (e) => {
-            if (selectedObject) selectedObject.name = e.target.value;
-        });
-        document.getElementById('obj-size').addEventListener('input', (e) => {
-            if (selectedObject) {
-                const size = parseFloat(e.target.value);
-                selectedObject.size = size;
-                const mesh = selectedObject.mesh;
-                mesh.geometry.dispose();
-                mesh.geometry = new THREE.SphereGeometry(size, mesh.geometry.parameters.radiusSegments || 32, mesh.geometry.parameters.heightSegments || 32);
-                document.getElementById('size-value').textContent = size.toFixed(1);
-            }
-        });
-        document.getElementById('obj-speed').addEventListener('input', (e) => {
-            if (selectedObject && selectedObject.type !== 'star') {
-                const speed = parseFloat(e.target.value);
-                selectedObject.orbitalSpeed = (BASE_SPEED * speed) / Math.sqrt(selectedObject.distance);
-                document.getElementById('speed-value-prop').textContent = speed.toFixed(1);
-            }
-        });
-        document.getElementById('obj-distance').addEventListener('input', (e) => {
-            if (selectedObject && selectedObject.type !== 'star') {
-                const distance = parseFloat(e.target.value);
-                selectedObject.distance = distance;
-                selectedObject.mesh.position.x = distance;
-                
-                // Update orbit line
-                if (selectedObject.orbitLine) {
-                    scene.remove(selectedObject.orbitLine);
-                    const newOrbitLine = createOrbitLine(distance);
-                    if (selectedObject.parent) {
-                        const parentGroup = selectedObject.parent.parent || selectedObject.parent;
-                        newOrbitLine.position.copy(parentGroup.position);
-                    }
-                    newOrbitLine.visible = showOrbits;
-                    scene.add(newOrbitLine);
-                    const index = orbitLines.indexOf(selectedObject.orbitLine);
-                    if (index > -1) orbitLines[index] = newOrbitLine;
-                    selectedObject.orbitLine = newOrbitLine;
-                }
-                
-                document.getElementById('distance-value').textContent = distance.toFixed(0);
-            }
-        });
-        document.getElementById('obj-color').addEventListener('input', (e) => {
-            if (selectedObject) {
-                const color = new THREE.Color(e.target.value);
-                selectedObject.color = color;
-                selectedObject.mesh.material.color = color;
-                selectedObject.mesh.material.emissive = color;
-                
-                if (selectedObject.type === 'star') {
-                    selectedObject.glow.material.color = color;
-                    selectedObject.outerGlow.material.color = color;
-                    selectedObject.corona.material.color = color;
-                    selectedObject.light.color = color;
-                }
-            }
-        });
-        document.getElementById('obj-glow').addEventListener('input', (e) => {
-            if (selectedObject && selectedObject.type === 'star') {
-                const intensity = parseFloat(e.target.value);
-                selectedObject.glowIntensity = intensity;
-                selectedObject.glow.material.opacity = 0.3 * intensity;
-                selectedObject.outerGlow.material.opacity = 0.15 * intensity;
-                selectedObject.corona.material.opacity = 0.08 * intensity;
-                selectedObject.light.intensity = 2 * intensity;
-                document.getElementById('glow-value').textContent = intensity.toFixed(1);
-            }
-        });
-        document.getElementById('obj-rotation').addEventListener('input', (e) => {
-            if (selectedObject) {
-                const speed = parseFloat(e.target.value);
-                selectedObject.rotationSpeed = 0.02 * speed;
-                document.getElementById('rotation-value').textContent = speed.toFixed(1);
-            }
-        });
-        document.getElementById('focus-btn').addEventListener('click', () => {
-            if (selectedObject) focusOnObject(selectedObject);
-        });
-        document.getElementById('delete-btn').addEventListener('click', () => {
-            if (selectedObject && confirm(`Delete ${selectedObject.name}?`)) {
-                deleteObject(selectedObject);
-            }
-        });
 
         // Modal controls
         document.getElementById('close-modal').addEventListener('click', hideCreationModal);
         document.getElementById('creation-modal').addEventListener('click', (e) => {
             if (e.target.id === 'creation-modal') hideCreationModal();
         });
+
+        // Focus controls
+        document.getElementById('back-to-universe-btn').addEventListener('click', exitFocusMode);
 
         // Context menu
         document.getElementById('context-menu').addEventListener('click', (e) => {
@@ -893,7 +1491,11 @@
                 if (action === 'focus') focusOnObject(selectedObject);
                 else if (action === 'edit') selectObject(selectedObject);
                 else if (action === 'delete') {
-                    if (confirm(`Delete ${selectedObject.name}?`)) deleteObject(selectedObject);
+                    if (currentMode === 'solar') {
+                        deselectObject();
+                    } else if (confirm(`Delete ${selectedObject.name}?`)) {
+                        deleteObject(selectedObject);
+                    }
                 }
             }
             hideContextMenu();
@@ -904,6 +1506,45 @@
                 hideContextMenu();
             }
         });
+    }
+
+    // Setup mode event listeners
+    function setupModeEventListeners() {
+        // Mode toggle buttons
+        document.getElementById('universe-mode-btn').addEventListener('click', () => switchMode('universe'));
+        document.getElementById('solar-mode-btn').addEventListener('click', () => switchMode('solar'));
+
+        // Solar System mode controls
+        document.getElementById('solar-play-pause-btn').addEventListener('click', toggleSolarPlayPause);
+        document.getElementById('solar-reverse-btn').addEventListener('click', toggleSolarReverse);
+        document.getElementById('solar-speed-slider').addEventListener('input', (e) => {
+            timeScale = parseFloat(e.target.value) / 50;
+            document.getElementById('solar-speed-value').textContent = timeScale.toFixed(1) + 'x';
+        });
+
+        // Solar view options
+        document.getElementById('solar-show-orbits').addEventListener('change', (e) => {
+            showOrbits = e.target.checked;
+            solarOrbitLines.forEach(line => line.visible = showOrbits);
+            solarSystemObjects.forEach(obj => {
+                if (obj.orbitLine) obj.orbitLine.visible = showOrbits;
+            });
+        });
+        document.getElementById('solar-auto-rotate').addEventListener('change', (e) => {
+            autoRotate = e.target.checked;
+            controls.autoRotate = autoRotate;
+        });
+
+        // Solar navigation
+        document.getElementById('solar-reset-view-btn').addEventListener('click', () => {
+            exitFocusMode();
+            camera.position.set(0, 80, 250);
+            controls.target.set(0, 0, 0);
+            controls.update();
+        });
+
+        // Load to Universe Builder
+        document.getElementById('load-to-universe-btn').addEventListener('click', loadSolarSystemToUniverse);
     }
 
     // Show creation modal
@@ -1019,47 +1660,8 @@
 
         form.innerHTML = formContent;
 
-        // Add event listeners for sliders
-        const sizeSlider = document.getElementById('create-size');
-        if (sizeSlider) {
-            sizeSlider.addEventListener('input', (e) => {
-                document.getElementById('create-size-val').textContent = e.target.value;
-            });
-        }
-        const distSlider = document.getElementById('create-distance');
-        if (distSlider) {
-            distSlider.addEventListener('input', (e) => {
-                document.getElementById('create-dist-val').textContent = e.target.value;
-            });
-        }
-        const speedSlider = document.getElementById('create-orbit-speed');
-        if (speedSlider) {
-            speedSlider.addEventListener('input', (e) => {
-                document.getElementById('create-speed-val').textContent = parseFloat(e.target.value).toFixed(1);
-            });
-        }
-        const rotSlider = document.getElementById('create-rot-speed');
-        if (rotSlider) {
-            rotSlider.addEventListener('input', (e) => {
-                document.getElementById('create-rot-val').textContent = parseFloat(e.target.value).toFixed(1);
-            });
-        }
-        const glowSlider = document.getElementById('create-glow');
-        if (glowSlider) {
-            glowSlider.addEventListener('input', (e) => {
-                document.getElementById('create-glow-val').textContent = parseFloat(e.target.value).toFixed(1);
-            });
-        }
-
-        // Position sliders for stars
-        ['x', 'y', 'z'].forEach(axis => {
-            const slider = document.getElementById(`create-pos-${axis}`);
-            if (slider) {
-                slider.addEventListener('input', (e) => {
-                    document.getElementById(`create-pos-${axis}-val`).textContent = e.target.value;
-                });
-            }
-        });
+        // Add slider event listeners
+        addSliderListeners();
 
         // Submit button
         document.getElementById('create-submit').addEventListener('click', () => {
@@ -1104,6 +1706,48 @@
         modal.classList.remove('hidden');
     }
 
+    // Add slider listeners for creation modal
+    function addSliderListeners() {
+        const sizeSlider = document.getElementById('create-size');
+        if (sizeSlider) {
+            sizeSlider.addEventListener('input', (e) => {
+                document.getElementById('create-size-val').textContent = e.target.value;
+            });
+        }
+        const distSlider = document.getElementById('create-distance');
+        if (distSlider) {
+            distSlider.addEventListener('input', (e) => {
+                document.getElementById('create-dist-val').textContent = e.target.value;
+            });
+        }
+        const speedSlider = document.getElementById('create-orbit-speed');
+        if (speedSlider) {
+            speedSlider.addEventListener('input', (e) => {
+                document.getElementById('create-speed-val').textContent = parseFloat(e.target.value).toFixed(1);
+            });
+        }
+        const rotSlider = document.getElementById('create-rot-speed');
+        if (rotSlider) {
+            rotSlider.addEventListener('input', (e) => {
+                document.getElementById('create-rot-val').textContent = parseFloat(e.target.value).toFixed(1);
+            });
+        }
+        const glowSlider = document.getElementById('create-glow');
+        if (glowSlider) {
+            glowSlider.addEventListener('input', (e) => {
+                document.getElementById('create-glow-val').textContent = parseFloat(e.target.value).toFixed(1);
+            });
+        }
+        ['x', 'y', 'z'].forEach(axis => {
+            const slider = document.getElementById(`create-pos-${axis}`);
+            if (slider) {
+                slider.addEventListener('input', (e) => {
+                    document.getElementById(`create-pos-${axis}-val`).textContent = e.target.value;
+                });
+            }
+        });
+    }
+
     // Hide creation modal
     function hideCreationModal() {
         document.getElementById('creation-modal').classList.add('hidden');
@@ -1123,7 +1767,7 @@
         document.getElementById('context-menu').classList.add('hidden');
     }
 
-    // Toggle play/pause
+    // Toggle play/pause (Universe mode)
     function togglePlayPause() {
         isPaused = !isPaused;
         const btn = document.getElementById('play-pause-btn');
@@ -1131,10 +1775,25 @@
         btn.classList.toggle('active', !isPaused);
     }
 
-    // Toggle reverse
+    // Toggle reverse (Universe mode)
     function toggleReverse() {
         isReversed = !isReversed;
         const btn = document.getElementById('reverse-btn');
+        btn.classList.toggle('active', isReversed);
+    }
+
+    // Toggle play/pause (Solar mode)
+    function toggleSolarPlayPause() {
+        isPaused = !isPaused;
+        const btn = document.getElementById('solar-play-pause-btn');
+        btn.textContent = isPaused ? '▶️' : '⏸️';
+        btn.classList.toggle('active', !isPaused);
+    }
+
+    // Toggle reverse (Solar mode)
+    function toggleSolarReverse() {
+        isReversed = !isReversed;
+        const btn = document.getElementById('solar-reverse-btn');
         btn.classList.toggle('active', isReversed);
     }
 
@@ -1151,14 +1810,21 @@
         mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
         raycaster.setFromCamera(mouse, camera);
-        const allMeshes = [...stars.map(s => s.mesh), ...planets.map(p => p.mesh), ...moons.map(m => m.mesh)];
+        
+        let allMeshes = [];
+        if (currentMode === 'universe') {
+            allMeshes = [...stars.map(s => s.mesh), ...planets.map(p => p.mesh), ...moons.map(m => m.mesh)];
+        } else {
+            allMeshes = solarSystemObjects.map(obj => obj.mesh);
+        }
+        
         const intersects = raycaster.intersectObjects(allMeshes);
 
         // Reset hover state
         if (hoveredObject && (!intersects.length || intersects[0].object !== hoveredObject.mesh)) {
             if (hoveredObject !== selectedObject) {
                 hoveredObject.mesh.scale.set(1, 1, 1);
-                if (hoveredObject.type !== 'star') {
+                if (hoveredObject.type !== 'star' && hoveredObject.type !== 'sun') {
                     hoveredObject.mesh.material.emissiveIntensity = 0.1;
                 }
             }
@@ -1177,7 +1843,7 @@
                 
                 if (hoveredObject !== selectedObject) {
                     hoveredObject.mesh.scale.set(1.1, 1.1, 1.1);
-                    if (hoveredObject.type !== 'star') {
+                    if (hoveredObject.type !== 'star' && hoveredObject.type !== 'sun') {
                         hoveredObject.mesh.material.emissiveIntensity = 0.3;
                     }
                 }
@@ -1190,13 +1856,20 @@
 
     // Mouse click handler
     function onMouseClick(event) {
-        if (event.button !== 0) return; // Only left click
+        if (event.button !== 0) return;
 
         mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
         mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
         raycaster.setFromCamera(mouse, camera);
-        const allMeshes = [...stars.map(s => s.mesh), ...planets.map(p => p.mesh), ...moons.map(m => m.mesh)];
+        
+        let allMeshes = [];
+        if (currentMode === 'universe') {
+            allMeshes = [...stars.map(s => s.mesh), ...planets.map(p => p.mesh), ...moons.map(m => m.mesh)];
+        } else {
+            allMeshes = solarSystemObjects.map(obj => obj.mesh);
+        }
+        
         const intersects = raycaster.intersectObjects(allMeshes);
 
         if (intersects.length > 0) {
@@ -1215,7 +1888,14 @@
         mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
         raycaster.setFromCamera(mouse, camera);
-        const allMeshes = [...stars.map(s => s.mesh), ...planets.map(p => p.mesh), ...moons.map(m => m.mesh)];
+        
+        let allMeshes = [];
+        if (currentMode === 'universe') {
+            allMeshes = [...stars.map(s => s.mesh), ...planets.map(p => p.mesh), ...moons.map(m => m.mesh)];
+        } else {
+            allMeshes = solarSystemObjects.map(obj => obj.mesh);
+        }
+        
         const intersects = raycaster.intersectObjects(allMeshes);
 
         if (intersects.length > 0) {
@@ -1269,30 +1949,47 @@
         const effectiveTimeScale = isReversed ? -timeScale : timeScale;
 
         if (!isPaused) {
-            // Animate stars
-            stars.forEach(star => {
-                star.angle += star.rotationSpeed * effectiveTimeScale;
-                star.mesh.rotation.y = star.angle;
-                
-                // Animate corona
-                const time = Date.now() * 0.001;
-                const scale = 1 + Math.sin(time * 2 + star.id) * 0.05;
-                star.corona.scale.set(scale, scale, scale);
-            });
+            if (currentMode === 'universe') {
+                // Animate universe stars
+                stars.forEach(star => {
+                    star.angle += star.rotationSpeed * effectiveTimeScale;
+                    star.mesh.rotation.y = star.angle;
+                    
+                    const time = Date.now() * 0.001;
+                    const scale = 1 + Math.sin(time * 2 + star.id) * 0.05;
+                    star.corona.scale.set(scale, scale, scale);
+                });
 
-            // Animate planets
-            planets.forEach(planet => {
-                planet.angle += planet.orbitalSpeed * effectiveTimeScale;
-                planet.group.rotation.y = planet.angle;
-                planet.mesh.rotation.y += planet.rotationSpeed * effectiveTimeScale;
-            });
+                // Animate planets
+                planets.forEach(planet => {
+                    planet.angle += planet.orbitalSpeed * effectiveTimeScale;
+                    planet.group.rotation.y = planet.angle;
+                    planet.mesh.rotation.y += planet.rotationSpeed * effectiveTimeScale;
+                });
 
-            // Animate moons
-            moons.forEach(moon => {
-                moon.angle += moon.orbitalSpeed * effectiveTimeScale;
-                moon.group.rotation.y = moon.angle;
-                moon.mesh.rotation.y += moon.rotationSpeed * effectiveTimeScale;
-            });
+                // Animate moons
+                moons.forEach(moon => {
+                    moon.angle += moon.orbitalSpeed * effectiveTimeScale;
+                    moon.group.rotation.y = moon.angle;
+                    moon.mesh.rotation.y += moon.rotationSpeed * effectiveTimeScale;
+                });
+            } else {
+                // Animate Solar System
+                solarSystemObjects.forEach(obj => {
+                    if (obj.type === 'sun') {
+                        // Rotate Sun
+                        obj.angle += obj.rotationSpeed * effectiveTimeScale;
+                        obj.mesh.rotation.y = obj.angle;
+                    } else if (obj.type === 'solarPlanet' || obj.type === 'solarMoon') {
+                        // Orbit planets and moons
+                        obj.angle += obj.orbitalSpeed * effectiveTimeScale;
+                        obj.group.rotation.y = obj.angle;
+                        
+                        // Rotate planet/moon
+                        obj.mesh.rotation.y += obj.rotationSpeed * effectiveTimeScale;
+                    }
+                });
+            }
         }
 
         // Animate starfield
@@ -1309,7 +2006,7 @@
             const worldPos = new THREE.Vector3();
             if (selectedObject.group) {
                 selectedObject.group.getWorldPosition(worldPos);
-            } else {
+            } else if (selectedObject.mesh) {
                 selectedObject.mesh.getWorldPosition(worldPos);
             }
             controls.target.copy(worldPos);
