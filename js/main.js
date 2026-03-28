@@ -9,6 +9,17 @@
     let selectedPlanet = null;
     let showOrbits = true;
     let showLabels = true;
+    let focusMode = false;
+    let autoRotate = false;
+    let hoveredPlanet = null;
+    let originalCameraPosition = new THREE.Vector3(0, 60, 120);
+    let originalTarget = new THREE.Vector3(0, 0, 0);
+    let targetCameraPosition = null;
+    let targetLookAt = null;
+    let cameraAnimationProgress = 1;
+    let audioContext = null;
+    let audioGainNode = null;
+    let audioOscillators = [];
     
     // Planet objects
     const planets = [];
@@ -170,9 +181,12 @@
         }
         controls.enableDamping = true;
         controls.dampingFactor = 0.05;
-        controls.minDistance = 20;
+        controls.minDistance = 15;
         controls.maxDistance = 300;
         controls.maxPolarAngle = Math.PI / 1.5;
+        controls.enablePan = false;
+        controls.autoRotate = false;
+        controls.autoRotateSpeed = 0.5;
 
         // Lighting
         // Sun light (point light at center)
@@ -214,7 +228,7 @@
     function createSun() {
         // Sun geometry and material with glow effect
         const sunGeometry = new THREE.SphereGeometry(5, 64, 64);
-        const sunMaterial = new THREE.MeshBasicMaterial({ 
+        const sunMaterial = new THREE.MeshBasicMaterial({
             color: 0xffdd44,
             emissive: 0xffdd44
         });
@@ -240,6 +254,28 @@
         });
         const outerGlow = new THREE.Mesh(outerGlowGeometry, outerGlowMaterial);
         scene.add(outerGlow);
+
+        // Corona effect (animated outer glow)
+        const coronaGeometry = new THREE.SphereGeometry(10, 64, 64);
+        const coronaMaterial = new THREE.MeshBasicMaterial({
+            color: 0xff6600,
+            transparent: true,
+            opacity: 0.05
+        });
+        const corona = new THREE.Mesh(coronaGeometry, coronaMaterial);
+        scene.add(corona);
+
+        // Animate corona
+        function animateCorona() {
+            const time = Date.now() * 0.001;
+            const scale = 1 + Math.sin(time * 2) * 0.1;
+            corona.scale.set(scale, scale, scale);
+            requestAnimationFrame(animateCorona);
+        }
+        animateCorona();
+
+        // Store sun reference for animations
+        scene.userData.sun = { sun, sunGlow, outerGlow, corona };
     }
 
     function createPlanets() {
@@ -253,16 +289,19 @@
             const planetMaterial = new THREE.MeshStandardMaterial({
                 color: data.color,
                 roughness: 0.8,
-                metalness: 0.2
+                metalness: 0.2,
+                emissive: data.color,
+                emissiveIntensity: 0.1
             });
             const planet = new THREE.Mesh(planetGeometry, planetMaterial);
             planet.position.x = data.distance;
             planet.castShadow = true;
             planet.receiveShadow = true;
-            planet.userData = { 
-                name: data.name, 
+            planet.userData = {
+                name: data.name,
                 index: index,
-                data: data
+                data: data,
+                originalScale: data.radius
             };
             orbitGroup.add(planet);
 
@@ -446,6 +485,17 @@
         // Mouse click for planet selection
         renderer.domElement.addEventListener('click', onMouseClick);
 
+        // Mouse move for hover effects
+        renderer.domElement.addEventListener('mousemove', onMouseMove);
+
+        // Mouse down/up for drag state
+        renderer.domElement.addEventListener('mousedown', () => {
+            document.getElementById('canvas-container').classList.add('interacting');
+        });
+        renderer.domElement.addEventListener('mouseup', () => {
+            document.getElementById('canvas-container').classList.remove('interacting');
+        });
+
         // Speed slider
         const speedSlider = document.getElementById('speed-slider');
         const speedValue = document.getElementById('speed-value');
@@ -466,9 +516,30 @@
         // Reset view button
         const resetViewBtn = document.getElementById('reset-view-btn');
         resetViewBtn.addEventListener('click', () => {
+            exitFocusMode();
             camera.position.set(0, 60, 120);
             controls.target.set(0, 0, 0);
             controls.update();
+        });
+
+        // Auto-rotate checkbox
+        document.getElementById('auto-rotate').addEventListener('change', (e) => {
+            autoRotate = e.target.checked;
+            controls.autoRotate = autoRotate;
+        });
+
+        // Ambient sound checkbox
+        document.getElementById('ambient-sound').addEventListener('change', (e) => {
+            if (e.target.checked) {
+                startAmbientSound();
+            } else {
+                stopAmbientSound();
+            }
+        });
+
+        // Back to Solar System button
+        document.getElementById('back-to-solar-btn').addEventListener('click', () => {
+            exitFocusMode();
         });
 
         // Show orbits checkbox
@@ -487,6 +558,7 @@
         // Info panel close button
         document.querySelector('.close-btn').addEventListener('click', () => {
             hideInfoPanel();
+            exitFocusMode();
         });
 
         // Close info panel when clicking outside
@@ -497,6 +569,7 @@
                 const isPlanetClick = raycaster.intersectObjects(planetMeshes).length > 0;
                 if (!isPlanetClick && selectedPlanet) {
                     hideInfoPanel();
+                    exitFocusMode();
                 }
             }
         });
@@ -506,6 +579,41 @@
         camera.aspect = window.innerWidth / window.innerHeight;
         camera.updateProjectionMatrix();
         renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    function onMouseMove(event) {
+        // Calculate mouse position in normalized device coordinates
+        mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+        // Raycast to find hovered planet
+        raycaster.setFromCamera(mouse, camera);
+        const intersects = raycaster.intersectObjects(planetMeshes);
+
+        // Reset previous hover state
+        if (hoveredPlanet && (!intersects.length || intersects[0].object !== hoveredPlanet)) {
+            hoveredPlanet.scale.set(
+                hoveredPlanet.userData.originalScale / hoveredPlanet.userData.data.radius,
+                hoveredPlanet.userData.originalScale / hoveredPlanet.userData.data.radius,
+                hoveredPlanet.userData.originalScale / hoveredPlanet.userData.data.radius
+            );
+            hoveredPlanet.material.emissiveIntensity = 0.1;
+            hoveredPlanet = null;
+            document.getElementById('canvas-container').classList.remove('hovering');
+        }
+
+        // Set new hover state
+        if (intersects.length > 0 && intersects[0].object !== selectedPlanet) {
+            const planet = intersects[0].object;
+            if (planet !== hoveredPlanet) {
+                hoveredPlanet = planet;
+                // Slight scale up
+                planet.scale.set(1.2, 1.2, 1.2);
+                // Increase glow
+                planet.material.emissiveIntensity = 0.5;
+                document.getElementById('canvas-container').classList.add('hovering');
+            }
+        }
     }
 
     function onMouseClick(event) {
@@ -536,6 +644,7 @@
         const infoPeriod = document.getElementById('info-period');
         const infoDay = document.getElementById('info-day');
         const infoDescription = document.getElementById('info-description');
+        const backToSolarBtn = document.getElementById('back-to-solar-btn');
 
         // Update icon
         infoIcon.className = `planet-icon ${data.colorClass}`;
@@ -548,9 +657,17 @@
         infoDay.textContent = data.dayText;
         infoDescription.textContent = data.description;
 
-        // Show panel
+        // Show panel and back button
         infoPanel.classList.remove('hidden');
         infoPanel.classList.add('visible');
+        backToSolarBtn.style.display = 'block';
+
+        // Highlight planet
+        planet.scale.set(1.3, 1.3, 1.3);
+        planet.material.emissiveIntensity = 0.8;
+
+        // Enter focus mode
+        enterFocusMode(planet);
 
         // Update selection ring
         updateSelectionRing(planet);
@@ -582,22 +699,161 @@
     }
 
     function hideInfoPanel() {
+        if (selectedPlanet) {
+            // Reset planet scale and glow
+            selectedPlanet.scale.set(1, 1, 1);
+            selectedPlanet.material.emissiveIntensity = 0.1;
+        }
         selectedPlanet = null;
         const infoPanel = document.getElementById('info-panel');
         infoPanel.classList.remove('visible');
         infoPanel.classList.add('hidden');
         document.getElementById('selection-ring').style.display = 'none';
+        document.getElementById('back-to-solar-btn').style.display = 'none';
+    }
+
+    function enterFocusMode(planet) {
+        focusMode = true;
+
+        // Store original camera position if not already stored
+        if (!originalCameraPosition.equals(camera.position)) {
+            originalCameraPosition.copy(camera.position);
+            originalTarget.copy(controls.target);
+        }
+
+        // Calculate target camera position (closer to planet)
+        const planetWorldPos = new THREE.Vector3();
+        planet.getWorldPosition(planetWorldPos);
+
+        const distanceOffset = 15; // Distance from planet
+        const offset = new THREE.Vector3(distanceOffset, distanceOffset * 0.5, distanceOffset);
+
+        targetCameraPosition = planetWorldPos.clone().add(offset);
+        targetLookAt = planetWorldPos.clone();
+
+        // Start animation
+        cameraAnimationProgress = 0;
+    }
+
+    function exitFocusMode() {
+        if (!focusMode) return;
+
+        focusMode = false;
+
+        // Animate back to original position
+        targetCameraPosition = originalCameraPosition.clone();
+        targetLookAt = originalTarget.clone();
+
+        // Reset planet scale if selected
+        if (selectedPlanet) {
+            selectedPlanet.scale.set(1, 1, 1);
+            selectedPlanet.material.emissiveIntensity = 0.1;
+        }
+
+        // Start animation
+        cameraAnimationProgress = 0;
+    }
+
+    function updateCameraAnimation(deltaTime) {
+        if (cameraAnimationProgress >= 1) return;
+
+        cameraAnimationProgress += deltaTime * 2; // Animation speed
+        if (cameraAnimationProgress > 1) cameraAnimationProgress = 1;
+
+        // Ease-in-out function
+        const ease = cameraAnimationProgress < 0.5
+            ? 2 * cameraAnimationProgress * cameraAnimationProgress
+            : 1 - Math.pow(-2 * cameraAnimationProgress + 2, 2) / 2;
+
+        // Interpolate camera position
+        if (targetCameraPosition) {
+            camera.position.lerp(targetCameraPosition, ease);
+        }
+
+        // Interpolate look-at target
+        if (targetLookAt) {
+            controls.target.lerp(targetLookAt, ease);
+            controls.update();
+        }
+    }
+
+    function startAmbientSound() {
+        if (audioContext) return; // Already started
+
+        try {
+            // Create audio context
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            audioGainNode = audioContext.createGain();
+            audioGainNode.gain.value = 0.1; // Low volume
+            audioGainNode.connect(audioContext.destination);
+
+            // Create multiple oscillators for layered drone effect
+            const frequencies = [60, 90, 120, 150, 180];
+
+            frequencies.forEach((freq, index) => {
+                const oscillator = audioContext.createOscillator();
+                const gain = audioContext.createGain();
+
+                oscillator.type = 'sine';
+                oscillator.frequency.setValueAtTime(freq, audioContext.currentTime);
+
+                // Subtle frequency modulation
+                const lfo = audioContext.createOscillator();
+                const lfoGain = audioContext.createGain();
+                lfo.frequency.setValueAtTime(0.1 + index * 0.05, audioContext.currentTime);
+                lfoGain.gain.setValueAtTime(5, audioContext.currentTime);
+                lfo.connect(lfoGain);
+                lfoGain.connect(oscillator.frequency);
+                lfo.start();
+
+                // Very low volume
+                gain.gain.setValueAtTime(0.05, audioContext.currentTime);
+
+                oscillator.connect(gain);
+                gain.connect(audioGainNode);
+                oscillator.start();
+
+                audioOscillators.push({ oscillator, gain, lfo });
+            });
+        } catch (err) {
+            console.log('Audio initialization failed:', err);
+        }
+    }
+
+    function stopAmbientSound() {
+        if (!audioContext) return;
+
+        // Fade out
+        if (audioGainNode) {
+            audioGainNode.gain.setValueAtTime(audioGainNode.gain.value, audioContext.currentTime);
+            audioGainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.5);
+        }
+
+        setTimeout(() => {
+            audioOscillators.forEach(({ oscillator, lfo }) => {
+                oscillator.stop();
+                lfo.stop();
+            });
+            audioOscillators = [];
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+            audioGainNode = null;
+        }, 500);
     }
 
     function animate() {
         requestAnimationFrame(animate);
+
+        const deltaTime = 1 / 60; // Assuming 60 FPS
 
         if (!isPaused) {
             // Update planet orbits
             planets.forEach(planet => {
                 // Orbital rotation
                 planet.group.rotation.y += planet.orbitalSpeed * timeScale;
-                
+
                 // Self-rotation
                 planet.planet.rotation.y += planet.rotationSpeed * timeScale;
 
@@ -608,12 +864,23 @@
             });
         }
 
+        // Update camera animation
+        updateCameraAnimation(deltaTime);
+
         // Update labels every frame
         updatePlanetLabels();
 
         // Update selection ring position if planet is selected
         if (selectedPlanet) {
             updateSelectionRing(selectedPlanet);
+
+            // In focus mode, keep camera focused on planet
+            if (focusMode && cameraAnimationProgress >= 1) {
+                const planetWorldPos = new THREE.Vector3();
+                selectedPlanet.getWorldPosition(planetWorldPos);
+                controls.target.copy(planetWorldPos);
+                controls.update();
+            }
         }
 
         controls.update();
