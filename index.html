@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Universe - 3D Solar System Simulation</title>
+    <title>Universe Builder - Create Your Own Universe</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -13,8 +13,8 @@
     <!-- Loading Screen -->
     <div id="loading-screen">
         <div class="loader">
-            <div class="sun-loader"></div>
-            <div class="loading-text">Initializing Universe</div>
+            <div class="universe-loader"></div>
+            <div class="loading-text">Initializing Universe Builder</div>
             <div class="loading-bar">
                 <div class="loading-progress"></div>
             </div>
@@ -24,84 +24,153 @@
     <!-- Canvas Container -->
     <div id="canvas-container"></div>
 
-    <!-- Controls Panel -->
-    <div id="controls-panel" class="glass-panel">
-        <h3>Simulation Controls</h3>
+    <!-- Universe Control Panel -->
+    <div id="control-panel" class="glass-panel">
+        <h3>🌌 Universe Builder</h3>
         
-        <div class="control-group">
-            <label>
+        <div class="control-section">
+            <h4>Creation Tools</h4>
+            <button id="add-star-btn" class="action-btn">
+                <span class="btn-icon">☀️</span>
+                Add Star
+            </button>
+            <button id="add-planet-btn" class="action-btn" disabled>
+                <span class="btn-icon">🪐</span>
+                Add Planet
+            </button>
+            <button id="add-moon-btn" class="action-btn" disabled>
+                <span class="btn-icon">🌙</span>
+                Add Moon
+            </button>
+        </div>
+
+        <div class="control-section">
+            <h4>Time Control</h4>
+            <div class="time-controls">
+                <button id="play-pause-btn" class="icon-btn active">⏸️</button>
+                <button id="reverse-btn" class="icon-btn">⏪</button>
+            </div>
+            <div class="slider-group">
+                <label for="speed-slider">Time Speed</label>
+                <input type="range" id="speed-slider" min="0" max="200" value="50">
+                <span id="speed-value">1.0x</span>
+            </div>
+        </div>
+
+        <div class="control-section">
+            <h4>View Options</h4>
+            <label class="toggle-label">
                 <input type="checkbox" id="show-orbits" checked>
-                Show Orbit Lines
+                <span>Show Orbit Lines</span>
             </label>
-        </div>
-
-        <div class="control-group">
-            <label>
-                <input type="checkbox" id="show-labels" checked>
-                Show Planet Labels
-            </label>
-        </div>
-
-        <div class="control-group">
-            <label for="speed-slider">Time Speed</label>
-            <input type="range" id="speed-slider" min="0" max="100" value="20">
-            <div id="speed-value">1.0x</div>
-        </div>
-
-        <div class="control-group">
-            <div class="toggle-buttons">
-                <button id="play-pause-btn" class="toggle-btn active">Pause</button>
-                <button id="reset-view-btn" class="toggle-btn">Reset View</button>
-            </div>
-        </div>
-
-        <div class="control-group">
-            <label>
+            <label class="toggle-label">
                 <input type="checkbox" id="auto-rotate">
-                Auto-Rotate Camera
+                <span>Auto-Rotate Camera</span>
             </label>
         </div>
 
-        <div class="control-group">
-            <label>
-                <input type="checkbox" id="ambient-sound">
-                Ambient Sound
-            </label>
+        <div class="control-section">
+            <h4>Universe Actions</h4>
+            <button id="generate-random-btn" class="secondary-btn">
+                <span class="btn-icon">🎲</span>
+                Generate Random
+            </button>
+            <div class="button-group">
+                <button id="save-btn" class="secondary-btn">💾 Save</button>
+                <button id="load-btn" class="secondary-btn">📂 Load</button>
+            </div>
+            <button id="clear-all-btn" class="danger-btn">
+                <span class="btn-icon">🗑️</span>
+                Clear Universe
+            </button>
+        </div>
+
+        <div class="control-section">
+            <h4>Navigation</h4>
+            <button id="reset-view-btn" class="secondary-btn">🎯 Reset View</button>
         </div>
     </div>
 
-    <!-- Info Panel -->
-    <div id="info-panel" class="glass-panel">
-        <button class="close-btn">&times;</button>
-        <div class="planet-icon" id="info-icon"></div>
-        <h2 id="info-name">Planet</h2>
-        <div class="planet-stats">
-            <div class="stat">
-                <span class="stat-label">Diameter</span>
-                <span class="stat-value" id="info-diameter">-</span>
+    <!-- Object Inspector Panel -->
+    <div id="inspector-panel" class="glass-panel hidden">
+        <div class="panel-header">
+            <h3 id="inspector-title">Object Properties</h3>
+            <button class="close-btn" id="close-inspector">&times;</button>
+        </div>
+        
+        <div class="inspector-content">
+            <div class="property-group">
+                <label for="obj-name">Name</label>
+                <input type="text" id="obj-name" class="text-input">
             </div>
-            <div class="stat">
-                <span class="stat-label">Distance from Sun</span>
-                <span class="stat-value" id="info-distance">-</span>
+
+            <div class="property-group">
+                <label for="obj-size">Size: <span id="size-value">1.0</span></label>
+                <input type="range" id="obj-size" min="0.1" max="10" step="0.1" value="1">
             </div>
-            <div class="stat">
-                <span class="stat-label">Orbital Period</span>
-                <span class="stat-value" id="info-period">-</span>
+
+            <div class="property-group">
+                <label for="obj-speed">Orbit Speed: <span id="speed-value-prop">1.0</span></label>
+                <input type="range" id="obj-speed" min="0" max="10" step="0.1" value="1">
             </div>
-            <div class="stat">
-                <span class="stat-label">Day Length</span>
-                <span class="stat-value" id="info-day">-</span>
+
+            <div class="property-group">
+                <label for="obj-distance">Distance from Parent: <span id="distance-value">20</span></label>
+                <input type="range" id="obj-distance" min="5" max="200" step="1" value="20">
+            </div>
+
+            <div class="property-group">
+                <label for="obj-color">Color</label>
+                <input type="color" id="obj-color" value="#ffffff">
+            </div>
+
+            <div class="property-group">
+                <label for="obj-glow">Glow Intensity: <span id="glow-value">1.0</span></label>
+                <input type="range" id="obj-glow" min="0" max="3" step="0.1" value="1">
+            </div>
+
+            <div class="property-group">
+                <label for="obj-rotation">Rotation Speed: <span id="rotation-value">1.0</span></label>
+                <input type="range" id="obj-rotation" min="0" max="5" step="0.1" value="1">
+            </div>
+
+            <div class="button-group">
+                <button id="focus-btn" class="action-btn">🎥 Focus</button>
+                <button id="delete-btn" class="danger-btn">🗑️ Delete</button>
             </div>
         </div>
-        <p class="planet-description" id="info-description">Select a planet to view details.</p>
-        <button id="back-to-solar-btn" class="focus-btn" style="display: none;">← Back to Solar System</button>
     </div>
 
-    <!-- Planet Labels Container -->
-    <div id="planet-labels"></div>
+    <!-- Creation Modal -->
+    <div id="creation-modal" class="modal hidden">
+        <div class="modal-content glass-panel">
+            <div class="panel-header">
+                <h3 id="modal-title">Create Star</h3>
+                <button class="close-btn" id="close-modal">&times;</button>
+            </div>
+            <div class="creation-form" id="creation-form">
+                <!-- Dynamic form content -->
+            </div>
+        </div>
+    </div>
 
-    <!-- Selection Ring -->
-    <div id="selection-ring" class="selection-ring" style="display: none;"></div>
+    <!-- Focus Controls -->
+    <div id="focus-controls" class="glass-panel hidden">
+        <button id="back-to-universe-btn" class="action-btn">← Back to Universe</button>
+    </div>
+
+    <!-- Context Menu -->
+    <div id="context-menu" class="context-menu glass-panel hidden">
+        <button class="context-item" data-action="focus">🎥 Focus</button>
+        <button class="context-item" data-action="edit">✏️ Edit</button>
+        <button class="context-item" data-action="delete">🗑️ Delete</button>
+    </div>
+
+    <!-- Tooltip -->
+    <div id="tooltip" class="tooltip"></div>
+
+    <!-- File Input (hidden) -->
+    <input type="file" id="file-input" accept=".json" style="display: none;">
 
     <!-- Three.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
