@@ -42,6 +42,7 @@
             distance: 0,
             orbitalPeriod: 0,
             rotationPeriod: 25,
+            mass: 1000, // Mass in physics units
             description: 'The Sun is the star at the center of our Solar System.'
         },
         planets: [
@@ -52,6 +53,7 @@
                 distance: 25,
                 orbitalPeriod: 88, // Earth days
                 rotationPeriod: 58.6,
+                mass: 0.055,
                 description: 'Mercury is the smallest planet in our Solar System.'
             },
             {
@@ -61,6 +63,7 @@
                 distance: 35,
                 orbitalPeriod: 225,
                 rotationPeriod: -243,
+                mass: 0.815,
                 description: 'Venus is the hottest planet in our Solar System.'
             },
             {
@@ -71,6 +74,7 @@
                 orbitalPeriod: 365,
                 rotationPeriod: 1,
                 hasMoon: true,
+                mass: 1.0,
                 description: 'Earth is the third planet from the Sun and our home.'
             },
             {
@@ -80,6 +84,7 @@
                 distance: 62,
                 orbitalPeriod: 687,
                 rotationPeriod: 1.03,
+                mass: 0.107,
                 description: 'Mars is the fourth planet, known as the Red Planet.'
             },
             {
@@ -89,6 +94,7 @@
                 distance: 90,
                 orbitalPeriod: 4333,
                 rotationPeriod: 0.41,
+                mass: 317.8,
                 description: 'Jupiter is the largest planet in our Solar System.'
             },
             {
@@ -99,6 +105,7 @@
                 orbitalPeriod: 10759,
                 rotationPeriod: 0.45,
                 hasRings: true,
+                mass: 95.2,
                 description: 'Saturn is known for its beautiful ring system.'
             },
             {
@@ -108,6 +115,7 @@
                 distance: 150,
                 orbitalPeriod: 30687,
                 rotationPeriod: -0.72,
+                mass: 14.5,
                 description: 'Uranus is an ice giant with a tilted rotation.'
             },
             {
@@ -117,6 +125,7 @@
                 distance: 180,
                 orbitalPeriod: 60190,
                 rotationPeriod: 0.67,
+                mass: 17.1,
                 description: 'Neptune is the farthest planet from the Sun.'
             }
         ],
@@ -126,13 +135,194 @@
             color: 0xcccccc,
             distance: 4,
             orbitalPeriod: 27.3,
-            parent: 'Earth'
+            parent: 'Earth',
+            mass: 0.0123
         }
     };
 
-    // Constants
+    // Physics Constants
+    const GRAVITATIONAL_CONSTANT = 0.5; // Scaled G for simulation stability
     const BASE_SPEED = 0.005;
+    const PHYSICS_TIME_STEP = 0.016; // ~60fps
     let nextId = 1;
+
+    // ==========================================
+    // NEWTONIAN PHYSICS ENGINE
+    // ==========================================
+    
+    class PhysicsBody {
+        constructor(options = {}) {
+            this.id = options.id || Date.now();
+            this.mass = options.mass || 1;
+            this.position = options.position ? options.position.clone() : new THREE.Vector3();
+            this.velocity = options.velocity ? options.velocity.clone() : new THREE.Vector3();
+            this.acceleration = new THREE.Vector3();
+            this.prevAcceleration = new THREE.Vector3();
+            this.radius = options.radius || 1;
+            this.type = options.type || 'body';
+            
+            // For trajectory trail
+            this.trail = [];
+            this.maxTrailLength = 200;
+        }
+
+        // Calculate kinetic energy: KE = 0.5 * m * v^2
+        getKineticEnergy() {
+            return 0.5 * this.mass * this.velocity.lengthSq();
+        }
+
+        // Get orbital speed for circular orbit around a central mass
+        static getCircularOrbitalVelocity(centralMass, distance) {
+            return Math.sqrt((GRAVITATIONAL_CONSTANT * centralMass) / distance);
+        }
+
+        // Get escape velocity
+        static getEscapeVelocity(centralMass, distance) {
+            return Math.sqrt((2 * GRAVITATIONAL_CONSTANT * centralMass) / distance);
+        }
+
+        // Get orbital period using Kepler's 3rd law: T^2 = (4π^2 / GM) * r^3
+        static getOrbitalPeriod(centralMass, semiMajorAxis) {
+            return 2 * Math.PI * Math.sqrt(Math.pow(semiMajorAxis, 3) / (GRAVITATIONAL_CONSTANT * centralMass));
+        }
+    }
+
+    class PhysicsEngine {
+        constructor() {
+            this.bodies = [];
+            this.timeStep = PHYSICS_TIME_STEP;
+            this.substeps = 4; // Substepping for stability
+        }
+
+        addBody(body) {
+            this.bodies.push(body);
+            return body;
+        }
+
+        removeBody(body) {
+            const index = this.bodies.indexOf(body);
+            if (index > -1) {
+                this.bodies.splice(index, 1);
+            }
+        }
+
+        clear() {
+            this.bodies = [];
+        }
+
+        // Calculate gravitational force between two bodies
+        // F = G * (m1 * m2) / r^2
+        calculateGravitationalForce(body1, body2) {
+            const direction = new THREE.Vector3().subVectors(body2.position, body1.position);
+            const distanceSq = direction.lengthSq();
+            const distance = Math.sqrt(distanceSq);
+
+            // Prevent division by zero and extreme forces at very close distances
+            const minDistance = body1.radius + body2.radius;
+            const effectiveDistance = Math.max(distance, minDistance);
+            const effectiveDistanceSq = effectiveDistance * effectiveDistance;
+
+            // Newton's Law of Universal Gravitation
+            const forceMagnitude = (GRAVITATIONAL_CONSTANT * body1.mass * body2.mass) / effectiveDistanceSq;
+            
+            direction.normalize();
+            return direction.multiplyScalar(forceMagnitude);
+        }
+
+        // Calculate total gravitational force on a body from all other bodies
+        calculateNetForce(body) {
+            const netForce = new THREE.Vector3();
+            
+            for (const other of this.bodies) {
+                if (other === body) continue;
+                
+                const force = this.calculateGravitationalForce(body, other);
+                netForce.add(force);
+            }
+            
+            return netForce;
+        }
+
+        // Velocity Verlet integration for stable orbital mechanics
+        // More stable than Euler method for long-term simulations
+        update(dt) {
+            const subDt = dt / this.substeps;
+            
+            for (let step = 0; step < this.substeps; step++) {
+                // Step 1: Calculate forces and accelerations at current positions
+                for (const body of this.bodies) {
+                    const force = this.calculateNetForce(body);
+                    body.acceleration.copy(force.divideScalar(body.mass));
+                }
+
+                // Step 2: Update positions: x(t+dt) = x(t) + v(t)*dt + 0.5*a(t)*dt^2
+                for (const body of this.bodies) {
+                    const velocityTerm = body.velocity.clone().multiplyScalar(subDt);
+                    const accelTerm = body.acceleration.clone().multiplyScalar(0.5 * subDt * subDt);
+                    body.position.add(velocityTerm).add(accelTerm);
+                    
+                    // Update trail
+                    if (body.trail.length === 0 || body.position.distanceToSquared(body.trail[body.trail.length - 1]) > 0.5) {
+                        body.trail.push(body.position.clone());
+                        if (body.trail.length > body.maxTrailLength) {
+                            body.trail.shift();
+                        }
+                    }
+                }
+
+                // Step 3: Calculate new accelerations at new positions
+                const newAccelerations = [];
+                for (const body of this.bodies) {
+                    const force = this.calculateNetForce(body);
+                    newAccelerations.push(force.divideScalar(body.mass));
+                }
+
+                // Step 4: Update velocities: v(t+dt) = v(t) + 0.5*(a(t) + a(t+dt))*dt
+                for (let i = 0; i < this.bodies.length; i++) {
+                    const body = this.bodies[i];
+                    const avgAccel = body.acceleration.clone().add(newAccelerations[i]).multiplyScalar(0.5);
+                    body.velocity.add(avgAccel.multiplyScalar(subDt));
+                }
+            }
+        }
+
+        // Get total energy of the system
+        getTotalEnergy() {
+            let kineticEnergy = 0;
+            let potentialEnergy = 0;
+
+            for (const body of this.bodies) {
+                kineticEnergy += body.getKineticEnergy();
+            }
+
+            // Calculate potential energy: U = -G * m1 * m2 / r
+            for (let i = 0; i < this.bodies.length; i++) {
+                for (let j = i + 1; j < this.bodies.length; j++) {
+                    const distance = this.bodies[i].position.distanceTo(this.bodies[j].position);
+                    potentialEnergy -= (GRAVITATIONAL_CONSTANT * this.bodies[i].mass * this.bodies[j].mass) / distance;
+                }
+            }
+
+            return { kinetic: kineticEnergy, potential: potentialEnergy, total: kineticEnergy + potentialEnergy };
+        }
+    }
+
+    // Global physics engine instance
+    const physicsEngine = new PhysicsEngine();
+    
+    // Helper to get mass from object type and size
+    function calculateMass(type, size) {
+        const densityFactors = {
+            star: 10,    // Stars are much more massive
+            planet: 1,   // Reference density
+            moon: 0.5,   // Moons are less dense on average
+            sun: 1000    // Sun is extremely massive
+        };
+        
+        const factor = densityFactors[type] || 1;
+        // Mass = density * volume = density * (4/3 * π * r^3)
+        return factor * (4 / 3) * Math.PI * Math.pow(size, 3) * 0.1;
+    }
 
     // Initialize
     function init() {
@@ -260,6 +450,18 @@
         );
         const glowIntensity = options.glowIntensity || 1;
         const name = options.name || `Star ${nextId++}`;
+        
+        // Create physics body for star (stars are static/imovable)
+        const mass = options.mass || calculateMass('star', size);
+        const physicsBody = new PhysicsBody({
+            id: Date.now(),
+            mass: mass,
+            position: position.clone(),
+            velocity: new THREE.Vector3(0, 0, 0),
+            radius: size,
+            type: 'star'
+        });
+        physicsEngine.addBody(physicsBody);
 
         // Star group
         const starGroup = new THREE.Group();
@@ -316,7 +518,7 @@
 
         // Store star data
         const starData = {
-            id: Date.now(),
+            id: physicsBody.id,
             type: 'star',
             name: name,
             mesh: star,
@@ -329,6 +531,8 @@
             baseSize: size,
             color: new THREE.Color(color),
             glowIntensity: glowIntensity,
+            mass: mass,
+            physicsBody: physicsBody,
             rotationSpeed: 0.005,
             angle: Math.random() * Math.PI * 2
         };
@@ -354,13 +558,43 @@
         const rotationSpeed = options.rotationSpeed || 1;
         const name = options.name || `Planet ${nextId++}`;
 
-        // Get parent group
+        // Get parent group and position
         const parentGroup = parent.parent || parent;
-
-        // Orbit group
-        const orbitGroup = new THREE.Group();
-        orbitGroup.position.copy(parentGroup.position);
-        scene.add(orbitGroup);
+        const parentPosition = parentGroup.position.clone();
+        
+        // Get parent's physics body for mass
+        const parentData = parent.userData;
+        const parentMass = parentData.physicsBody ? parentData.physicsBody.mass : calculateMass('star', parentData.size || 5);
+        
+        // Calculate initial position
+        const initialAngle = options.initialAngle || Math.random() * Math.PI * 2;
+        const initialPosition = new THREE.Vector3(
+            parentPosition.x + Math.cos(initialAngle) * distance,
+            parentPosition.y,
+            parentPosition.z + Math.sin(initialAngle) * distance
+        );
+        
+        // Calculate orbital velocity for circular orbit (perpendicular to radius)
+        // v = sqrt(GM/r)
+        const orbitalVelocityMagnitude = PhysicsBody.getCircularOrbitalVelocity(parentMass, distance);
+        const velocityDirection = new THREE.Vector3(
+            -Math.sin(initialAngle),
+            0,
+            Math.cos(initialAngle)
+        );
+        const initialVelocity = velocityDirection.multiplyScalar(orbitalVelocityMagnitude * orbitSpeed);
+        
+        // Create physics body for planet
+        const mass = options.mass || calculateMass('planet', size);
+        const physicsBody = new PhysicsBody({
+            id: Date.now(),
+            mass: mass,
+            position: initialPosition,
+            velocity: initialVelocity,
+            radius: size,
+            type: 'planet'
+        });
+        physicsEngine.addBody(physicsBody);
 
         // Planet mesh
         const planetGeometry = new THREE.SphereGeometry(size, 32, 32);
@@ -372,34 +606,35 @@
             emissiveIntensity: 0.1
         });
         const planet = new THREE.Mesh(planetGeometry, planetMaterial);
-        planet.position.x = distance;
+        planet.position.copy(initialPosition);
         planet.castShadow = true;
         planet.receiveShadow = true;
-        orbitGroup.add(planet);
+        scene.add(planet);
 
         // Create orbit line
         const orbitLine = createOrbitLine(distance);
-        orbitLine.position.copy(parentGroup.position);
+        orbitLine.position.copy(parentPosition);
         orbitLine.visible = showOrbits;
         scene.add(orbitLine);
         orbitLines.push(orbitLine);
 
         // Store planet data
         const planetData = {
-            id: Date.now(),
+            id: physicsBody.id,
             type: 'planet',
             name: name,
             mesh: planet,
-            group: orbitGroup,
             parent: parent,
+            parentPhysicsBody: parentData.physicsBody,
             orbitLine: orbitLine,
             size: size,
             baseSize: size,
             color: new THREE.Color(color),
             distance: distance,
-            orbitalSpeed: (BASE_SPEED * orbitSpeed) / Math.sqrt(distance),
+            mass: mass,
+            physicsBody: physicsBody,
             rotationSpeed: 0.02 * rotationSpeed,
-            angle: Math.random() * Math.PI * 2
+            initialAngle: initialAngle
         };
         planet.userData = planetData;
         planets.push(planetData);
@@ -423,9 +658,44 @@
         const rotationSpeed = options.rotationSpeed || 1;
         const name = options.name || `Moon ${nextId++}`;
 
-        // Moon orbit group (attached to planet)
-        const moonOrbitGroup = new THREE.Group();
-        parent.add(moonOrbitGroup);
+        // Get parent data and position
+        const parentData = parent.userData;
+        const parentPosition = parentData.physicsBody ? parentData.physicsBody.position.clone() : parent.position.clone();
+        const parentMass = parentData.physicsBody ? parentData.physicsBody.mass : calculateMass('planet', parentData.size || 1);
+        
+        // Calculate initial position
+        const initialAngle = options.initialAngle || Math.random() * Math.PI * 2;
+        const initialPosition = new THREE.Vector3(
+            parentPosition.x + Math.cos(initialAngle) * distance,
+            parentPosition.y,
+            parentPosition.z + Math.sin(initialAngle) * distance
+        );
+        
+        // Calculate orbital velocity for circular orbit around planet
+        // Moon orbits relative to planet, so we add planet's velocity
+        const orbitalVelocityMagnitude = PhysicsBody.getCircularOrbitalVelocity(parentMass, distance);
+        const velocityDirection = new THREE.Vector3(
+            -Math.sin(initialAngle),
+            0,
+            Math.cos(initialAngle)
+        );
+        
+        // Start with parent's velocity if parent has physics body
+        const parentVelocity = parentData.physicsBody ? parentData.physicsBody.velocity.clone() : new THREE.Vector3();
+        const relativeVelocity = velocityDirection.multiplyScalar(orbitalVelocityMagnitude * orbitSpeed);
+        const initialVelocity = parentVelocity.add(relativeVelocity);
+        
+        // Create physics body for moon
+        const mass = options.mass || calculateMass('moon', size);
+        const physicsBody = new PhysicsBody({
+            id: Date.now(),
+            mass: mass,
+            position: initialPosition,
+            velocity: initialVelocity,
+            radius: size,
+            type: 'moon'
+        });
+        physicsEngine.addBody(physicsBody);
 
         // Moon mesh
         const moonGeometry = new THREE.SphereGeometry(size, 16, 16);
@@ -437,37 +707,34 @@
             emissiveIntensity: 0.05
         });
         const moon = new THREE.Mesh(moonGeometry, moonMaterial);
-        moon.position.x = distance;
+        moon.position.copy(initialPosition);
         moon.castShadow = true;
         moon.receiveShadow = true;
-        moonOrbitGroup.add(moon);
+        scene.add(moon);
 
-        // Create moon orbit line
+        // Create moon orbit line (visual only - centered on parent)
         const moonOrbitLine = createOrbitLine(distance);
-        moonOrbitLine.rotation.x = Math.PI / 2;
         moonOrbitLine.visible = showOrbits;
-        parent.add(moonOrbitLine);
-
-        // Get planet data
-        const parentData = parent.userData;
+        scene.add(moonOrbitLine);
 
         // Store moon data
         const moonData = {
-            id: Date.now(),
+            id: physicsBody.id,
             type: 'moon',
             name: name,
             mesh: moon,
-            group: moonOrbitGroup,
             parent: parent,
             parentData: parentData,
+            parentPhysicsBody: parentData.physicsBody,
             orbitLine: moonOrbitLine,
             size: size,
             baseSize: size,
             color: new THREE.Color(color),
             distance: distance,
-            orbitalSpeed: BASE_SPEED * 2 * orbitSpeed,
+            mass: mass,
+            physicsBody: physicsBody,
             rotationSpeed: 0.02 * rotationSpeed,
-            angle: Math.random() * Math.PI * 2
+            initialAngle: initialAngle
         };
         moon.userData = moonData;
         moons.push(moonData);
@@ -545,10 +812,23 @@
     // Create Sun for Solar System mode
     function createSolarSun(sunInfo) {
         const size = sunInfo.size;
+        const position = new THREE.Vector3(0, 0, 0);
+        
+        // Create physics body for Sun
+        const mass = sunInfo.mass || calculateMass('sun', size);
+        const physicsBody = new PhysicsBody({
+            id: Date.now(),
+            mass: mass,
+            position: position.clone(),
+            velocity: new THREE.Vector3(0, 0, 0),
+            radius: size,
+            type: 'sun'
+        });
+        physicsEngine.addBody(physicsBody);
         
         // Sun group
         const sunGroup = new THREE.Group();
-        sunGroup.position.set(0, 0, 0);
+        sunGroup.position.copy(position);
         
         // Sun mesh
         const sunGeometry = new THREE.SphereGeometry(size, 64, 64);
@@ -586,13 +866,15 @@
 
         // Store sun data
         const sunDataObj = {
-            id: Date.now(),
+            id: physicsBody.id,
             type: 'sun',
             name: sunInfo.name,
             mesh: sun,
             group: sunGroup,
             size: size,
             color: new THREE.Color(sunInfo.color),
+            mass: mass,
+            physicsBody: physicsBody,
             rotationSpeed: 0.001 * sunInfo.rotationPeriod,
             description: sunInfo.description,
             angle: 0
@@ -608,10 +890,41 @@
         const size = planetInfo.size;
         const distance = planetInfo.distance;
         
-        // Orbit group
-        const orbitGroup = new THREE.Group();
-        orbitGroup.position.set(0, 0, 0);
-        scene.add(orbitGroup);
+        // Get Sun's physics body for gravitational calculations
+        const sunPhysicsBody = sunData ? sunData.physicsBody : null;
+        if (!sunPhysicsBody) return null;
+        
+        const sunMass = sunPhysicsBody.mass;
+        
+        // Calculate initial position (start on positive X axis)
+        const initialAngle = Math.random() * Math.PI * 2;
+        const initialPosition = new THREE.Vector3(
+            Math.cos(initialAngle) * distance,
+            0,
+            Math.sin(initialAngle) * distance
+        );
+        
+        // Calculate orbital velocity for circular orbit (Kepler's laws)
+        // v = sqrt(GM/r)
+        const orbitalVelocityMagnitude = PhysicsBody.getCircularOrbitalVelocity(sunMass, distance);
+        const velocityDirection = new THREE.Vector3(
+            -Math.sin(initialAngle),
+            0,
+            Math.cos(initialAngle)
+        );
+        const initialVelocity = velocityDirection.multiplyScalar(orbitalVelocityMagnitude);
+        
+        // Create physics body
+        const mass = planetInfo.mass || calculateMass('planet', size);
+        const physicsBody = new PhysicsBody({
+            id: Date.now(),
+            mass: mass,
+            position: initialPosition,
+            velocity: initialVelocity,
+            radius: size,
+            type: 'solarPlanet'
+        });
+        physicsEngine.addBody(physicsBody);
 
         // Planet mesh
         const planetGeometry = new THREE.SphereGeometry(size, 32, 32);
@@ -623,10 +936,10 @@
             emissiveIntensity: 0.1
         });
         const planet = new THREE.Mesh(planetGeometry, planetMaterial);
-        planet.position.x = distance;
+        planet.position.copy(initialPosition);
         planet.castShadow = true;
         planet.receiveShadow = true;
-        orbitGroup.add(planet);
+        scene.add(planet);
 
         // Add Saturn's rings
         if (planetInfo.hasRings) {
@@ -634,38 +947,33 @@
             planet.userData.rings = rings;
         }
 
-        // Create orbit line
+        // Create orbit line (visual reference)
         const orbitLine = createOrbitLine(distance);
         orbitLine.position.set(0, 0, 0);
         orbitLine.visible = showOrbits;
         scene.add(orbitLine);
         solarOrbitLines.push(orbitLine);
-
-        // Calculate orbital speed (scaled relative to Earth's orbital period)
-        // Earth = 1, Mercury = 4.14 (365/88), Neptune = 0.006 (365/60190)
-        const baseOrbitalSpeed = 0.01;
-        const orbitalSpeed = baseOrbitalSpeed * (365 / planetInfo.orbitalPeriod);
         
         // Rotation speed (scaled)
         const rotationSpeed = 0.02 * (1 / Math.abs(planetInfo.rotationPeriod));
 
         // Store planet data
         const planetData = {
-            id: Date.now(),
+            id: physicsBody.id,
             type: 'solarPlanet',
             name: planetInfo.name,
             mesh: planet,
-            group: orbitGroup,
+            physicsBody: physicsBody,
             orbitLine: orbitLine,
             size: size,
             color: new THREE.Color(planetInfo.color),
             distance: distance,
+            mass: mass,
             orbitalPeriod: planetInfo.orbitalPeriod,
-            orbitalSpeed: orbitalSpeed,
             rotationSpeed: rotationSpeed,
             rotationPeriod: planetInfo.rotationPeriod,
             description: planetInfo.description,
-            angle: Math.random() * Math.PI * 2
+            initialAngle: initialAngle
         };
         planet.userData = planetData;
         solarSystemObjects.push(planetData);
@@ -678,9 +986,46 @@
         const size = moonInfo.size;
         const distance = moonInfo.distance;
         
-        // Moon orbit group (attached to Earth)
-        const moonOrbitGroup = new THREE.Group();
-        earthPlanet.mesh.add(moonOrbitGroup);
+        // Get Earth's physics body
+        const earthPhysicsBody = earthPlanet.physicsBody;
+        if (!earthPhysicsBody) return null;
+        
+        const earthMass = earthPhysicsBody.mass;
+        const earthPosition = earthPhysicsBody.position.clone();
+        
+        // Calculate initial position relative to Earth
+        const initialAngle = 0;
+        const moonOffset = new THREE.Vector3(
+            Math.cos(initialAngle) * distance,
+            0,
+            Math.sin(initialAngle) * distance
+        );
+        const initialPosition = earthPosition.clone().add(moonOffset);
+        
+        // Calculate orbital velocity for circular orbit around Earth
+        // v = sqrt(GM/r)
+        const moonOrbitalSpeed = PhysicsBody.getCircularOrbitalVelocity(earthMass, distance);
+        const velocityDirection = new THREE.Vector3(
+            -Math.sin(initialAngle),
+            0,
+            Math.cos(initialAngle)
+        );
+        
+        // Moon's velocity is Earth's velocity plus relative orbital velocity
+        const relativeVelocity = velocityDirection.multiplyScalar(moonOrbitalSpeed);
+        const initialVelocity = earthPhysicsBody.velocity.clone().add(relativeVelocity);
+        
+        // Create physics body
+        const mass = moonInfo.mass || calculateMass('moon', size);
+        const physicsBody = new PhysicsBody({
+            id: Date.now(),
+            mass: mass,
+            position: initialPosition,
+            velocity: initialVelocity,
+            radius: size,
+            type: 'solarMoon'
+        });
+        physicsEngine.addBody(physicsBody);
 
         // Moon mesh
         const moonGeometry = new THREE.SphereGeometry(size, 16, 16);
@@ -692,37 +1037,33 @@
             emissiveIntensity: 0.05
         });
         const moon = new THREE.Mesh(moonGeometry, moonMaterial);
-        moon.position.x = distance;
+        moon.position.copy(initialPosition);
         moon.castShadow = true;
         moon.receiveShadow = true;
-        moonOrbitGroup.add(moon);
+        scene.add(moon);
 
         // Create moon orbit line
         const moonOrbitLine = createOrbitLine(distance);
-        moonOrbitLine.rotation.x = Math.PI / 2;
         moonOrbitLine.visible = showOrbits;
-        earthPlanet.mesh.add(moonOrbitLine);
-
-        // Calculate orbital speed (faster than planets)
-        const orbitalSpeed = BASE_SPEED * 2 * (27.3 / moonInfo.orbitalPeriod);
+        scene.add(moonOrbitLine);
 
         // Store moon data
         const moonData = {
-            id: Date.now(),
+            id: physicsBody.id,
             type: 'solarMoon',
             name: moonInfo.name,
             mesh: moon,
-            group: moonOrbitGroup,
+            physicsBody: physicsBody,
             parent: earthPlanet,
             orbitLine: moonOrbitLine,
             size: size,
             color: new THREE.Color(moonInfo.color),
             distance: distance,
+            mass: mass,
             orbitalPeriod: moonInfo.orbitalPeriod,
-            orbitalSpeed: orbitalSpeed,
             rotationSpeed: 0.02,
             description: 'Earth\'s natural satellite',
-            angle: 0
+            initialAngle: initialAngle
         };
         moon.userData = moonData;
         solarSystemObjects.push(moonData);
@@ -732,13 +1073,22 @@
 
     // Clear Solar System
     function clearSolarSystem() {
-        // Remove all solar system objects
+        // Remove all physics bodies
+        solarSystemObjects.forEach(obj => {
+            if (obj.physicsBody) {
+                physicsEngine.removeBody(obj.physicsBody);
+            }
+        });
+        
+        // Remove all solar system objects from scene
         solarSystemObjects.forEach(obj => {
             if (obj.group && obj.group.parent) {
                 scene.remove(obj.group);
             } else if (obj.mesh && obj.mesh.parent) {
-                // For moons attached to planets
-                obj.mesh.parent.remove(obj.mesh);
+                scene.remove(obj.mesh);
+            }
+            if (obj.orbitLine && obj.orbitLine.parent) {
+                scene.remove(obj.orbitLine);
             }
         });
         
@@ -765,7 +1115,8 @@
             size: 15,
             color: 0xffdd00,
             position: new THREE.Vector3(0, 0, 0),
-            glowIntensity: 2
+            glowIntensity: 2,
+            mass: SOLAR_SYSTEM_DATA.sun.mass
         });
 
         // Add planets from solar system
@@ -776,19 +1127,21 @@
                 size: planetInfo.size,
                 color: planetInfo.color,
                 distance: planetInfo.distance,
-                orbitSpeed: 365 / planetInfo.orbitalPeriod,
+                mass: planetInfo.mass,
+                orbitSpeed: 1.0,  // Physics-based orbit
                 rotationSpeed: 1 / Math.abs(planetInfo.rotationPeriod)
             });
             
             // Add Moon for Earth
-            if (planetInfo.hasMoon) {
+            if (planetInfo.hasMoon && planet) {
                 createMoon({
                     parent: planet.mesh,
                     name: 'Moon',
                     size: 0.4,
                     color: 0xcccccc,
                     distance: 4,
-                    orbitSpeed: 27.3 / 27.3
+                    mass: SOLAR_SYSTEM_DATA.moon.mass,
+                    orbitSpeed: 1.0  // Physics-based orbit
                 });
             }
         });
@@ -858,6 +1211,11 @@
     function deleteObject(objData) {
         if (!objData) return;
 
+        // Remove physics body
+        if (objData.physicsBody) {
+            physicsEngine.removeBody(objData.physicsBody);
+        }
+
         // Delete orbit line if exists
         if (objData.orbitLine) {
             scene.remove(objData.orbitLine);
@@ -878,10 +1236,11 @@
         }
 
         // Remove mesh
+        if (objData.mesh && objData.mesh.parent) {
+            scene.remove(objData.mesh);
+        }
         if (objData.group && objData.group.parent) {
             objData.group.parent.remove(objData.group);
-        } else if (objData.mesh && objData.mesh.parent) {
-            objData.mesh.parent.remove(objData.mesh);
         }
 
         // Remove from arrays
@@ -1126,18 +1485,60 @@
         const distInput = document.getElementById('obj-distance');
         if (distInput) {
             distInput.addEventListener('input', (e) => {
-                if (selectedObject && selectedObject.type !== 'star') {
+                if (selectedObject && selectedObject.type !== 'star' && selectedObject.physicsBody) {
                     const distance = parseFloat(e.target.value);
                     selectedObject.distance = distance;
-                    selectedObject.mesh.position.x = distance;
                     
+                    // Recalculate position based on parent's position
+                    let parentPosition = new THREE.Vector3(0, 0, 0);
+                    if (selectedObject.parentPhysicsBody) {
+                        parentPosition = selectedObject.parentPhysicsBody.position.clone();
+                    } else if (selectedObject.parent) {
+                        const parentGroup = selectedObject.parent.parent || selectedObject.parent;
+                        parentPosition = parentGroup.position.clone();
+                    }
+                    
+                    // Place at initial angle, new distance
+                    const angle = selectedObject.initialAngle || 0;
+                    const newPosition = new THREE.Vector3(
+                        parentPosition.x + Math.cos(angle) * distance,
+                        parentPosition.y,
+                        parentPosition.z + Math.sin(angle) * distance
+                    );
+                    
+                    // Update physics body position and recalculate velocity
+                    selectedObject.physicsBody.position.copy(newPosition);
+                    
+                    // Recalculate orbital velocity for new distance
+                    const parentMass = selectedObject.parentPhysicsBody ? 
+                        selectedObject.parentPhysicsBody.mass : 
+                        (selectedObject.parent && selectedObject.parent.userData.physicsBody ? 
+                            selectedObject.parent.userData.physicsBody.mass : 1000);
+                    
+                    const orbitalSpeed = PhysicsBody.getCircularOrbitalVelocity(parentMass, distance);
+                    const velocityDirection = new THREE.Vector3(
+                        -Math.sin(angle),
+                        0,
+                        Math.cos(angle)
+                    );
+                    
+                    // For moons, add parent's velocity
+                    let parentVelocity = new THREE.Vector3();
+                    if (selectedObject.parentPhysicsBody) {
+                        parentVelocity = selectedObject.parentPhysicsBody.velocity.clone();
+                    }
+                    
+                    const newVelocity = velocityDirection.multiplyScalar(orbitalSpeed).add(parentVelocity);
+                    selectedObject.physicsBody.velocity.copy(newVelocity);
+                    
+                    // Sync mesh
+                    selectedObject.mesh.position.copy(newPosition);
+                    
+                    // Update orbit line
                     if (selectedObject.orbitLine) {
                         scene.remove(selectedObject.orbitLine);
                         const newOrbitLine = createOrbitLine(distance);
-                        if (selectedObject.parent) {
-                            const parentGroup = selectedObject.parent.parent || selectedObject.parent;
-                            newOrbitLine.position.copy(parentGroup.position);
-                        }
+                        newOrbitLine.position.copy(parentPosition);
                         newOrbitLine.visible = showOrbits;
                         scene.add(newOrbitLine);
                         const index = orbitLines.indexOf(selectedObject.orbitLine);
@@ -1212,10 +1613,10 @@
             originalTarget.copy(controls.target);
         }
 
-        // Get world position
+        // Get world position from physics body or mesh
         const worldPos = new THREE.Vector3();
-        if (objData.group) {
-            objData.group.getWorldPosition(worldPos);
+        if (objData.physicsBody) {
+            worldPos.copy(objData.physicsBody.position);
         } else if (objData.mesh) {
             objData.mesh.getWorldPosition(worldPos);
         }
@@ -1245,7 +1646,7 @@
         document.getElementById('focus-controls').classList.add('hidden');
     }
 
-    // Generate random universe
+    // Generate random universe with physics-based orbits
     function generateRandomUniverse() {
         clearUniverse();
 
@@ -1270,7 +1671,7 @@
                     size: 0.5 + Math.random() * 2,
                     color: getRandomPlanetColor(),
                     distance: distance,
-                    orbitSpeed: 0.5 + Math.random() * 2,
+                    orbitSpeed: 0.8 + Math.random() * 0.4, // Varied speeds for variety
                     rotationSpeed: 0.5 + Math.random() * 2
                 });
 
@@ -1282,7 +1683,7 @@
                             size: 0.1 + Math.random() * 0.3,
                             color: 0x888888 + Math.random() * 0x222222,
                             distance: 2 + k * 1.5 + Math.random(),
-                            orbitSpeed: 0.5 + Math.random() * 1.5
+                            orbitSpeed: 0.8 + Math.random() * 0.4
                         });
                     }
                 }
@@ -1292,10 +1693,28 @@
 
     // Clear universe
     function clearUniverse() {
-        [...moons].forEach(m => deleteObject(m));
-        [...planets].forEach(p => deleteObject(p));
-        [...stars].forEach(s => deleteObject(s));
+        // Clear all physics bodies
+        physicsEngine.clear();
         
+        [...moons].forEach(m => {
+            if (m.mesh && m.mesh.parent) scene.remove(m.mesh);
+            if (m.orbitLine && m.orbitLine.parent) scene.remove(m.orbitLine);
+        });
+        [...planets].forEach(p => {
+            if (p.mesh && p.mesh.parent) scene.remove(p.mesh);
+            if (p.orbitLine && p.orbitLine.parent) scene.remove(p.orbitLine);
+        });
+        [...stars].forEach(s => {
+            if (s.group && s.group.parent) scene.remove(s.group);
+        });
+        
+        moons.length = 0;
+        planets.length = 0;
+        stars.length = 0;
+        orbitLines.length = 0;
+        
+        updatePlanetButtonStates();
+        updateMoonButtonStates();
         deselectObject();
     }
 
@@ -1317,30 +1736,36 @@
     // Save universe to JSON
     function saveUniverse() {
         const universeData = {
+            version: 2, // Version 2 includes physics data
             stars: stars.map(s => ({
                 name: s.name,
                 size: s.size,
                 color: '#' + s.color.getHexString(),
-                position: { x: s.group.position.x, y: s.group.position.y, z: s.group.position.z },
-                glowIntensity: s.glowIntensity
+                position: { x: s.physicsBody.position.x, y: s.physicsBody.position.y, z: s.physicsBody.position.z },
+                glowIntensity: s.glowIntensity,
+                mass: s.mass
             })),
             planets: planets.map(p => ({
                 name: p.name,
                 size: p.size,
                 color: '#' + p.color.getHexString(),
                 distance: p.distance,
-                orbitSpeed: (p.orbitalSpeed / BASE_SPEED) * Math.sqrt(p.distance),
+                orbitSpeed: 1.0, // Physics-based speed
                 rotationSpeed: p.rotationSpeed / 0.02,
-                parentName: p.parentData?.name || (stars.find(s => s.mesh === p.parent)?.name)
+                parentName: p.parentData?.name || (stars.find(s => s.mesh === p.parent)?.name),
+                mass: p.mass,
+                initialAngle: p.initialAngle
             })),
             moons: moons.map(m => ({
                 name: m.name,
                 size: m.size,
                 color: '#' + m.color.getHexString(),
                 distance: m.distance,
-                orbitSpeed: m.orbitalSpeed / BASE_SPEED / 2,
+                orbitSpeed: 1.0, // Physics-based speed
                 rotationSpeed: m.rotationSpeed / 0.02,
-                parentName: m.parentData?.name
+                parentName: m.parentData?.name,
+                mass: m.mass,
+                initialAngle: m.initialAngle
             }))
         };
 
@@ -1363,7 +1788,16 @@
 
                 const starMap = new Map();
                 data.stars.forEach(starData => {
-                    const star = createStar(starData);
+                    // Handle both old and new format
+                    const position = starData.position || { x: 0, y: 0, z: 0 };
+                    const star = createStar({
+                        name: starData.name,
+                        size: starData.size,
+                        color: parseInt(starData.color.replace('#', '0x')),
+                        position: new THREE.Vector3(position.x, position.y, position.z),
+                        glowIntensity: starData.glowIntensity,
+                        mass: starData.mass
+                    });
                     starMap.set(star.name, star);
                 });
 
@@ -1372,9 +1806,15 @@
                     const parent = starMap.get(planetData.parentName);
                     if (parent) {
                         const planet = createPlanet({
-                            ...planetData,
+                            name: planetData.name,
+                            size: planetData.size,
+                            color: parseInt(planetData.color.replace('#', '0x')),
+                            distance: planetData.distance,
+                            orbitSpeed: planetData.orbitSpeed !== undefined ? planetData.orbitSpeed : 1.0,
+                            rotationSpeed: planetData.rotationSpeed,
                             parent: parent.mesh,
-                            color: parseInt(planetData.color.replace('#', '0x'))
+                            mass: planetData.mass,
+                            initialAngle: planetData.initialAngle
                         });
                         planetMap.set(planet.name, planet);
                     }
@@ -1384,9 +1824,15 @@
                     const parent = planetMap.get(moonData.parentName);
                     if (parent) {
                         createMoon({
-                            ...moonData,
+                            name: moonData.name,
+                            size: moonData.size,
+                            color: parseInt(moonData.color.replace('#', '0x')),
+                            distance: moonData.distance,
+                            orbitSpeed: moonData.orbitSpeed !== undefined ? moonData.orbitSpeed : 1.0,
+                            rotationSpeed: moonData.rotationSpeed,
                             parent: parent.mesh,
-                            color: parseInt(moonData.color.replace('#', '0x'))
+                            mass: moonData.mass,
+                            initialAngle: moonData.initialAngle
                         });
                     }
                 });
@@ -1941,52 +2387,79 @@
         }
     }
 
-    // Animation loop
+    // Animation loop with physics-based motion
     function animate() {
         requestAnimationFrame(animate);
 
         const deltaTime = 1 / 60;
         const effectiveTimeScale = isReversed ? -timeScale : timeScale;
+        const physicsDelta = deltaTime * Math.abs(effectiveTimeScale);
 
         if (!isPaused) {
+            // Update physics simulation
+            physicsEngine.update(physicsDelta);
+
             if (currentMode === 'universe') {
-                // Animate universe stars
+                // Update stars - keep them at their physics positions (typically stationary)
                 stars.forEach(star => {
-                    star.angle += star.rotationSpeed * effectiveTimeScale;
-                    star.mesh.rotation.y = star.angle;
+                    star.mesh.rotation.y += star.rotationSpeed * effectiveTimeScale;
                     
+                    // Update star corona pulse effect
                     const time = Date.now() * 0.001;
                     const scale = 1 + Math.sin(time * 2 + star.id) * 0.05;
                     star.corona.scale.set(scale, scale, scale);
                 });
 
-                // Animate planets
+                // Update planets - sync mesh position with physics body
                 planets.forEach(planet => {
-                    planet.angle += planet.orbitalSpeed * effectiveTimeScale;
-                    planet.group.rotation.y = planet.angle;
+                    // Sync position from physics
+                    planet.mesh.position.copy(planet.physicsBody.position);
+                    
+                    // Self-rotation
                     planet.mesh.rotation.y += planet.rotationSpeed * effectiveTimeScale;
+                    
+                    // Update orbit line position to follow parent
+                    if (planet.parent && planet.orbitLine) {
+                        const parentGroup = planet.parent.parent || planet.parent;
+                        planet.orbitLine.position.copy(parentGroup.position);
+                    }
                 });
 
-                // Animate moons
+                // Update moons - sync mesh position with physics body
                 moons.forEach(moon => {
-                    moon.angle += moon.orbitalSpeed * effectiveTimeScale;
-                    moon.group.rotation.y = moon.angle;
+                    // Sync position from physics
+                    moon.mesh.position.copy(moon.physicsBody.position);
+                    
+                    // Self-rotation
                     moon.mesh.rotation.y += moon.rotationSpeed * effectiveTimeScale;
+                    
+                    // Update orbit line position to follow parent planet
+                    if (moon.parentData && moon.parentData.physicsBody && moon.orbitLine) {
+                        moon.orbitLine.position.copy(moon.parentData.physicsBody.position);
+                    }
                 });
             } else {
-                // Animate Solar System
+                // Animate Solar System - sync with physics
                 solarSystemObjects.forEach(obj => {
+                    if (obj.physicsBody) {
+                        // Sync mesh position with physics body
+                        obj.mesh.position.copy(obj.physicsBody.position);
+                    }
+                    
                     if (obj.type === 'sun') {
                         // Rotate Sun
-                        obj.angle += obj.rotationSpeed * effectiveTimeScale;
-                        obj.mesh.rotation.y = obj.angle;
-                    } else if (obj.type === 'solarPlanet' || obj.type === 'solarMoon') {
-                        // Orbit planets and moons
-                        obj.angle += obj.orbitalSpeed * effectiveTimeScale;
-                        obj.group.rotation.y = obj.angle;
-                        
-                        // Rotate planet/moon
                         obj.mesh.rotation.y += obj.rotationSpeed * effectiveTimeScale;
+                    } else {
+                        // Rotate planets and moons
+                        obj.mesh.rotation.y += obj.rotationSpeed * effectiveTimeScale;
+                    }
+                    
+                    // Update orbit line for Moon to follow Earth
+                    if (obj.type === 'solarMoon' && obj.parent && obj.orbitLine) {
+                        const parentPhysics = obj.parent.physicsBody;
+                        if (parentPhysics) {
+                            obj.orbitLine.position.copy(parentPhysics.position);
+                        }
                     }
                 });
             }
@@ -2004,8 +2477,8 @@
         // Keep focus on selected object in focus mode
         if (focusMode && selectedObject && cameraAnimationProgress >= 1) {
             const worldPos = new THREE.Vector3();
-            if (selectedObject.group) {
-                selectedObject.group.getWorldPosition(worldPos);
+            if (selectedObject.physicsBody) {
+                worldPos.copy(selectedObject.physicsBody.position);
             } else if (selectedObject.mesh) {
                 selectedObject.mesh.getWorldPosition(worldPos);
             }
