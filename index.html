@@ -3,22 +3,92 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D Solar System</title>
-    <style>
-        body { margin: 0; background: #000; overflow: hidden; }
-        #info {
-            position: absolute;
-            top: 10px;
-            width: 100%;
-            text-align: center;
-            color: white;
-            font-family: Arial, sans-serif;
-            pointer-events: none;
-        }
-    </style>
+    <title>Universe - 3D Solar System Simulation</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-    <div id="info">3D Solar System Explorer</div>
+    <!-- Loading Screen -->
+    <div id="loading-screen">
+        <div class="loader">
+            <div class="sun-loader"></div>
+            <div class="loading-text">Initializing Universe</div>
+            <div class="loading-bar">
+                <div class="loading-progress"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Canvas Container -->
+    <div id="canvas-container"></div>
+
+    <!-- Controls Panel -->
+    <div id="controls-panel" class="glass-panel">
+        <h3>Simulation Controls</h3>
+        
+        <div class="control-group">
+            <label>
+                <input type="checkbox" id="show-orbits" checked>
+                Show Orbit Lines
+            </label>
+        </div>
+
+        <div class="control-group">
+            <label>
+                <input type="checkbox" id="show-labels" checked>
+                Show Planet Labels
+            </label>
+        </div>
+
+        <div class="control-group">
+            <label for="speed-slider">Time Speed</label>
+            <input type="range" id="speed-slider" min="0" max="100" value="20">
+            <div id="speed-value">1.0x</div>
+        </div>
+
+        <div class="control-group">
+            <div class="toggle-buttons">
+                <button id="play-pause-btn" class="toggle-btn active">Pause</button>
+                <button id="reset-view-btn" class="toggle-btn">Reset View</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Info Panel -->
+    <div id="info-panel" class="glass-panel">
+        <button class="close-btn">&times;</button>
+        <div class="planet-icon" id="info-icon"></div>
+        <h2 id="info-name">Planet</h2>
+        <div class="planet-stats">
+            <div class="stat">
+                <span class="stat-label">Diameter</span>
+                <span class="stat-value" id="info-diameter">-</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Distance from Sun</span>
+                <span class="stat-value" id="info-distance">-</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Orbital Period</span>
+                <span class="stat-value" id="info-period">-</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Day Length</span>
+                <span class="stat-value" id="info-day">-</span>
+            </div>
+        </div>
+        <p class="planet-description" id="info-description">Select a planet to view details.</p>
+    </div>
+
+    <!-- Planet Labels Container -->
+    <div id="planet-labels"></div>
+
+    <!-- Selection Ring -->
+    <div id="selection-ring" class="selection-ring" style="display: none;"></div>
+
+    <!-- Three.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="js/main.js"></script>
