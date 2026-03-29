@@ -392,6 +392,40 @@
         setTimeout(() => {
             document.getElementById('loading-screen').classList.add('hidden');
         }, 2000);
+        // Debug sphere (at 0,0,0)
+        const debugSphere = new THREE.Mesh(
+            new THREE.SphereGeometry(2, 32, 32),
+            new THREE.MeshStandardMaterial({ color: 0x00ff00 })
+        );
+        debugSphere.position.set(0, 0, 0);
+        scene.add(debugSphere);
+
+        // Debug light
+        const debugLight = new THREE.PointLight(0xffffff, 1, 100);
+        debugLight.position.set(10, 10, 10);
+        scene.add(debugLight);
+
+        // Initial star and planet
+        try {
+            const initialSun = createStar({
+                name: "Alpha Centauri",
+                size: 10,
+                color: 0xffcc00,
+                position: new THREE.Vector3(0, 0, 0)
+            });
+
+            if (initialSun) {
+                createPlanet({
+                    name: "Proxima b",
+                    size: 2,
+                    color: 0x4488ff,
+                    distance: 50,
+                    parent: initialSun.mesh
+                });
+            }
+        } catch (e) {
+            console.error("Error creating initial objects:", e);
+        }
 
         // Start animation loop
         animate();
@@ -2581,7 +2615,6 @@
     } else {
         init();
     }
-})();
 
 // ==========================================
 // ENHANCED FEATURES - ADDED FOR UNIVERSE ENGINE
@@ -2849,3 +2882,4 @@ function checkMissionComplete() {
         setTimeout(() => { panel.classList.add('hidden'); }, 5000);
     }
 }
+})();
