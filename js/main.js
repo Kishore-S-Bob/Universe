@@ -394,45 +394,6 @@
             document.getElementById('loading-screen').classList.add('hidden');
         }, 2000);
 
-        // Create Sun: SphereGeometry (radius 3), bright emissive yellow material, position at (0,0,0)
-        const sunGeometry = new THREE.SphereGeometry(3, 32, 32);
-        const sunMaterial = new THREE.MeshBasicMaterial({
-            color: 0xffff00,
-            emissive: 0xffff00
-        });
-        const sun = new THREE.Mesh(sunGeometry, sunMaterial);
-        sun.position.set(0, 0, 0);
-        scene.add(sun);
-
-        // Add PointLight at Sun position
-        const sunLight = new THREE.PointLight(0xffff00, 2, 100);
-        sunLight.position.set(0, 0, 0);
-        scene.add(sunLight);
-
-        // Create Planet: SphereGeometry (radius 1), blue material, position at (10,0,0)
-        const planetGeometry = new THREE.SphereGeometry(1, 32, 32);
-        const planetMaterial = new THREE.MeshStandardMaterial({
-            color: 0x4488ff,
-            roughness: 0.5,
-            metalness: 0.5
-        });
-        const planet = new THREE.Mesh(planetGeometry, planetMaterial);
-        planet.position.set(10, 0, 0);
-        scene.add(planet);
-
-        // Store planet for animation
-        const simplePlanetData = {
-            mesh: planet,
-            distance: 10,
-            angle: 0,
-            orbitSpeed: 0.02
-        };
-
-        // Create orbit line visual
-        const orbitLine = createOrbitLine(10);
-        orbitLine.position.set(0, 0, 0);
-        orbitLine.visible = showOrbits;
-        scene.add(orbitLine);
 
         // Add initial star and planet for Universe mode
         try {
@@ -456,26 +417,7 @@
             console.error("Error creating initial objects:", e);
         }
 
-        // Start animation loop with simple circular orbit (no physics)
-        animateSimple(simplePlanetData);
-    }
-
-    // Simple animation loop for planet orbit (no physics)
-    function animateSimple(planetData) {
-        function animate() {
-            requestAnimationFrame(() => animateSimple(planetData));
-
-            // Simple circular orbit motion
-            if (planetData && !isPaused) {
-                const timeScale = parseFloat(document.getElementById('speed-slider')?.value || 50) / 50;
-                planetData.angle += planetData.orbitSpeed * timeScale;
-                planetData.mesh.position.x = Math.cos(planetData.angle) * planetData.distance;
-                planetData.mesh.position.z = Math.sin(planetData.angle) * planetData.distance;
-            }
-
-            controls.update();
-            renderer.render(scene, camera);
-        }
+        // Start the main animation loop
         animate();
     }
 
