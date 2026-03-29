@@ -755,3 +755,171 @@ body {
 .glass-panel {
     animation: fadeIn 0.3s ease;
 }
+
+/* Energy Display Panel */
+#energy-panel {
+    position: fixed;
+    top: 20px;
+    right: 340px;
+    width: 200px;
+    z-index: 100;
+}
+
+#energy-panel h4 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.8rem;
+    letter-spacing: 2px;
+    margin-bottom: 12px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+}
+
+.energy-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--glass-border);
+    font-size: 0.85rem;
+}
+
+.energy-item:last-child {
+    border-bottom: none;
+}
+
+.energy-value {
+    font-family: 'Orbitron', sans-serif;
+    color: var(--primary-color);
+}
+
+/* Mission Panel */
+#mission-panel {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 300px;
+    text-align: center;
+    z-index: 200;
+    background: linear-gradient(135deg, rgba(15, 23, 42, 0.9), rgba(30, 30, 60, 0.9));
+}
+
+#mission-panel h4 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 1rem;
+    letter-spacing: 2px;
+    margin-bottom: 15px;
+    color: var(--accent-color);
+}
+
+.mission-progress {
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px solid var(--glass-border);
+    color: var(--primary-color);
+    font-family: 'Orbitron', sans-serif;
+}
+
+/* Spaceship HUD */
+#spaceship-hud {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 250px;
+    z-index: 100;
+}
+
+.hud-section {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.hud-label {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.speed-bar {
+    width: 120px;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.speed-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, var(--primary-color), var(--accent-color));
+    border-radius: 4px;
+    transition: width 0.1s ease;
+}
+
+.boost-indicator {
+    padding: 4px 12px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-family: 'Orbitron', sans-serif;
+    color: var(--text-secondary);
+}
+
+.boost-indicator.active {
+    background: linear-gradient(135deg, #ff6b35, #ef4444);
+    color: white;
+    animation: boost-pulse 0.5s ease infinite;
+}
+
+@keyframes boost-pulse {
+    0%, 100% { box-shadow: 0 0 10px rgba(255, 107, 53, 0.5); }
+    50% { box-shadow: 0 0 20px rgba(255, 107, 53, 0.8); }
+}
+
+.hud-controls {
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px solid var(--glass-border);
+    display: flex;
+    justify-content: space-around;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+/* AI Assistant Panel */
+#ai-assistant-panel {
+    position: fixed;
+    bottom: 20px;
+    left: 320px;
+    width: 280px;
+    max-height: 200px;
+    z-index: 100;
+}
+
+#ai-assistant-panel h4 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.8rem;
+    letter-spacing: 2px;
+    margin-bottom: 10px;
+    color: var(--success-color);
+}
+
+.ai-message {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+    padding: 10px;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 8px;
+}
+
+/* Context Menu - Black Hole option */
+.context-item.danger {
+    color: var(--danger-color);
+}
+
+.context-item.danger:hover {
+    background: rgba(239, 68, 68, 0.2);
+}

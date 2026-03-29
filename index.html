@@ -50,6 +50,38 @@
                 <span class="btn-icon">🌙</span>
                 Add Moon
             </button>
+            <button id="add-blackhole-btn" class="action-btn danger-btn">
+                <span class="btn-icon">🕳️</span>
+                Add Black Hole
+            </button>
+        </div>
+
+        <div class="control-section">
+            <h4>Advanced Features</h4>
+            <label class="toggle-label">
+                <input type="checkbox" id="show-trails" checked>
+                <span>Show Orbit Trails</span>
+            </label>
+            <label class="toggle-label">
+                <input type="checkbox" id="enable-collisions" checked>
+                <span>Enable Collisions</span>
+            </label>
+            <label class="toggle-label">
+                <input type="checkbox" id="show-energy">
+                <span>Show Energy Stats</span>
+            </label>
+            <button id="spaceship-mode-btn" class="secondary-btn">
+                <span class="btn-icon">🚀</span>
+                Spaceship Mode
+            </button>
+            <button id="start-mission-btn" class="secondary-btn">
+                <span class="btn-icon">🎯</span>
+                Start Mission
+            </button>
+            <button id="ai-assistant-toggle-btn" class="secondary-btn">
+                <span class="btn-icon">🧠</span>
+                AI Assistant
+            </button>
         </div>
 
         <div class="control-section">
@@ -166,6 +198,54 @@
     <!-- Focus Controls -->
     <div id="focus-controls" class="glass-panel hidden">
         <button id="back-to-universe-btn" class="action-btn">← Back to Universe</button>
+    </div>
+    
+    <!-- Energy Display Panel -->
+    <div id="energy-panel" class="glass-panel hidden">
+        <h4>⚡ Energy Stats</h4>
+        <div id="energy-display">
+            <div class="energy-item">
+                <span>Kinetic:</span><span class="energy-value">0.00</span>
+            </div>
+            <div class="energy-item">
+                <span>Potential:</span><span class="energy-value">0.00</span>
+            </div>
+            <div class="energy-item">
+                <span>Total:</span><span class="energy-value">0.00</span>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Mission Panel -->
+    <div id="mission-panel" class="glass-panel hidden">
+        <h4>🎯 Mission</h4>
+        <p>No active mission</p>
+    </div>
+    
+    <!-- AI Assistant Panel -->
+    <div id="ai-assistant-panel" class="glass-panel hidden">
+        <h4>🧠 AI Assistant</h4>
+        <div class="ai-message" id="ai-message">
+            Welcome to Universe Builder! I can help you create stable planetary systems and explain physics concepts.
+        </div>
+    </div>
+    
+    <!-- Spaceship HUD -->
+    <div id="spaceship-hud" class="glass-panel hidden">
+        <div class="hud-section">
+            <span class="hud-label">Speed</span>
+            <div class="speed-bar">
+                <div id="speed-fill" class="speed-fill"></div>
+            </div>
+        </div>
+        <div class="hud-section">
+            <span class="hud-label">Boost</span>
+            <span id="boost-indicator" class="boost-indicator">OFF</span>
+        </div>
+        <div class="hud-controls">
+            <span>WASD - Move</span>
+            <span>SHIFT - Boost</span>
+        </div>
     </div>
 
     <!-- Context Menu -->
