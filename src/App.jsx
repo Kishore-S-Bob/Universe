@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from 'react';
+import { motion } from 'framer-motion';
 import SolarSystem from './components/SolarSystem';
 import EventPanel from './components/EventPanel';
 import Tooltip from './components/Tooltip';
