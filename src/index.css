@@ -1,0 +1,41 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  overflow: hidden;
+  font-family: 'Arial', sans-serif;
+}
+
+#root {
+  width: 100vw;
+  height: 100vh;
+}
+
+@layer utilities {
+  .glassmorphism {
+    background: rgba(26, 26, 46, 0.7);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  }
+  
+  .neon-glow {
+    box-shadow: 0 0 10px rgba(0, 212, 255, 0.5),
+                0 0 20px rgba(0, 212, 255, 0.3),
+                0 0 30px rgba(0, 212, 255, 0.2);
+  }
+  
+  .neon-glow-purple {
+    box-shadow: 0 0 10px rgba(179, 71, 234, 0.5),
+                0 0 20px rgba(179, 71, 234, 0.3),
+                0 0 30px rgba(179, 71, 234, 0.2);
+  }
+}
